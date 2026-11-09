@@ -83,6 +83,14 @@ internal static class Program
             Control<ImageRegionView>(main, "CaptureView").Region = new() { X = 160, Y = 100, Width = 320, Height = 160 };
             main.UpdateLayout(); Pump(); Capture(main, Path.Combine(output, "main-1280x900.png"));
             Check(File.Exists(Path.Combine(output, "main-1280x900.png")), "desktop layout rendered with synthetic image only");
+            // Force completed cleanup to cover the synchronous Closing-event path.
+            var closingCapture = (IAsyncDisposable)typeof(MainWindow).GetField("_capture", HiddenInstance)!.GetValue(main)!;
+            var closingBridge = (IAsyncDisposable)typeof(MainWindow).GetField("_bridge", HiddenInstance)!.GetValue(main)!;
+            closingCapture.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            closingBridge.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            main.Close(); Pump();
+            Check(!main.IsVisible, "idle window closes after synchronous cleanup without reentrant Close");
+            main = null;
             Console.WriteLine($"UI checks passed: {_checks}"); Console.WriteLine("Screenshots: " + output);
             return 0;
         }

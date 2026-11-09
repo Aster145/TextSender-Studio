@@ -367,6 +367,9 @@ public partial class MainWindow : Window
     {
         if (_closed) return; e.Cancel = true; if (_closing) return;
         try { SaveProject(); } catch (Exception error) { if (MessageBox.Show(this, "保存失败：" + error.Message + "\n仍然退出？", "退出", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return; }
-        _closing = true; ++_lanGeneration; _operation?.Cancel(); _lan?.Dispose(); if (_operationFinished != null) await Task.WhenAny(_operationFinished.Task, Task.Delay(6000)); await _capture.DisposeAsync(); await _bridge.DisposeAsync(); _closed = true; Close();
+        _closing = true; ++_lanGeneration; _operation?.Cancel(); _lan?.Dispose(); if (_operationFinished != null) await Task.WhenAny(_operationFinished.Task, Task.Delay(6000)); await _capture.DisposeAsync(); await _bridge.DisposeAsync(); _closed = true;
+        // Idle cleanup may complete synchronously. Let this Closing event return
+        // before closing again; WPF rejects a reentrant Close call.
+        _ = Dispatcher.BeginInvoke(new Action(Close));
     }
 }

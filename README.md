@@ -81,6 +81,18 @@ powershell -NoProfile -File ./build.ps1
 
 也可双击 `build.cmd` / `test.cmd`。结果位于 `artifacts/`。固件独立构建，不自动刷写开发板。
 
+### 单文件 EXE
+
+双击 `build-singlefile.cmd`，或运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./build-singlefile.ps1
+```
+
+生成 `artifacts/TextSenderStudio-singlefile-win-x64/TextSenderStudio.exe`，包含 .NET、WPF 和识图运行库，复制这一个 EXE 到可写目录即可运行，无需另装 .NET 或携带 DLL。构建脚本只生成本地文件，不上传发布包。
+
+运行时会按需生成 `settings.json` 和 `projects/`，仍保存在 EXE 同目录；首次启动时原生运行库由 .NET 自动解压到用户临时缓存。该行为遵循 [.NET 单文件部署](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview)。更新 EXE 不会删除已有项目和设置。源码中的 `LICENSE`、`THIRD_PARTY.md` 和 `licenses/` 保留对应许可信息。
+
 ## 当前验证范围
 
 首版为 `0.1.0`：已进行桌面构建、项目/设置与脚本测试、合成图匹配测试、模拟 HTTP/串口输入测试及固件编译。目标设备的 USB 枚举、按键效果、真实采集卡以及手指机器人联动仍需实机验证。
