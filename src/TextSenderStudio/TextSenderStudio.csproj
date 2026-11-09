@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><UseWPF>true</UseWPF>
+    <AssemblyName>TextSenderStudio</AssemblyName>
+    <ApplicationIcon>../../TextSenderStudio.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../TextSenderStudio.Core/TextSenderStudio.Core.csproj" />
+    <ProjectReference Include="../TextSenderStudio.Vision/TextSenderStudio.Vision.csproj" />
+    <Resource Include="../../TextSenderStudio.ico" Link="TextSenderStudio.ico" />
+  </ItemGroup>
+</Project>

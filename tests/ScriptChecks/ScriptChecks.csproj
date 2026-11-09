@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../vendor/EasyCon.Script/EasyCon.Script.csproj" />
+    <Compile Include="../../src/TextSenderStudio.Core/Contracts.cs" Link="Contracts.cs" />
+    <Compile Include="../../src/TextSenderStudio.Core/Scripting/*.cs" Link="Scripting/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

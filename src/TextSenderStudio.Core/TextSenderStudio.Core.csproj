@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><UseWindowsForms>true</UseWindowsForms><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../vendor/EasyCon.Script/EasyCon.Script.csproj" /></ItemGroup>
+  <ItemGroup><InternalsVisibleTo Include="TextSenderStudio" /></ItemGroup>
+  <ItemGroup><PackageReference Include="System.IO.Ports" Version="10.0.0" /></ItemGroup>
+</Project>

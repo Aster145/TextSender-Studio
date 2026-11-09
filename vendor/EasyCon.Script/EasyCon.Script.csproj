@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>EasyCon.Script</AssemblyName>
+    <RootNamespace>EasyCon.Script</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Version>1.7.0-alpha</Version>
+    <Authors>EasyCon contributors</Authors>
+    <NoWarn>$(NoWarn);CS8600;CS8602;CS8603;CS8604;CS8618;CS8625;CS8629;CS8765;CS8767</NoWarn>
+  </PropertyGroup>
+</Project>

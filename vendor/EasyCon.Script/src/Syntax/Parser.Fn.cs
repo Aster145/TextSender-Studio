@@ -1,0 +1,723 @@
+using System.Collections.Immutable;
+
+namespace EasyCon.Script.Syntax;
+
+internal partial class Parser
+{
+    private Statement ParseStatement()
+    {
+        switch (Current.Type)
+        {
+            case TokenType.CONST:
+                return ParseConstantOrDiscard();
+            case TokenType.VAR:
+                return ParseAssignmentOrDecl();
+            case TokenType.IMPORT:
+                return ParseImport();
+            case TokenType.STRUCT:
+                return ParseStructDecl();
+            case TokenType.IF:
+            case TokenType.ELIF:
+                return ParseIfelse();
+            case TokenType.ELSE when _grouptokens.Length == 1:
+                return new Else(Current);
+            case TokenType.ENDIF when _grouptokens.Length == 1:
+                return new EndIf(Current);
+            case TokenType.WHILE:
+                return ParseWhile();
+            case TokenType.UNTIL:
+                return ParseUntil();
+            case TokenType.FOR:
+                return ParseFor();
+            case TokenType.BREAK:
+            case TokenType.CONTINUE:
+                return ParseLoopCtrl();
+            case TokenType.NEXT when _grouptokens.Length == 1:
+                return new Next(Current);
+            case TokenType.EXTERN:
+                return ParseExternFunc();
+            case TokenType.FUNC:
+                return ParseFuncDecl();
+            case TokenType.ENDFUNC when _grouptokens.Length == 1:
+                return new EndFuncStmt(Current);
+            case TokenType.RETURN:
+                return ParseReturn();
+            case TokenType.END when _grouptokens.Length == 1:
+                return new EndBlockStmt(Current);
+            case TokenType.INT when _grouptokens.Length == 1:
+                var ok = int.TryParse(Current.Value, out var duration);
+                if (!ok) _diagnostics.ReportInvalidNumber(Current.Location, Current.Value);
+                return new Wait(Current, new LiteralExpr(Current, duration), true);
+            case TokenType.ButtonKeyword or TokenType.StickKeyword or TokenType.DirectionKeyword:
+                {
+                    return ParsePadButtonStatement();
+                }
+            case TokenType.IDENT:
+            default:
+                return ParseNamedExpression();
+        }
+    }
+
+    #region Statement Parsers
+
+    private Statement ParseConstantOrDiscard()
+    {
+        var token = Advance();
+
+        // _ = expr → discard assignment
+        if (token.Value == "_")
+        {
+            var target = new DiscardExpr(token);
+            var op = Match(TokenType.ASSIGN);
+            var eexp = ParseExpression();
+            MatchEOF();
+            return new AssignmentStmt(token, target, op, eexp);
+        }
+
+        // _NAME = expr → constant declaration
+        var des = (ConstVarExpr)Formatter.GetValueEx(token);
+        var assignOp = Match(TokenType.ASSIGN);
+        var expr = ParseExpression();
+        MatchEOF();
+        return new ConstantDeclStmt(token, des, assignOp, expr);
+    }
+
+    private ImportStmt ParseImport()
+    {
+        var keyword = Match(TokenType.IMPORT);
+        var mod = Match(TokenType.STRING);
+
+        // 解析可选的 AS 'alias' 子句
+        Token? alias = null;
+        if (Check(TokenType.AS))
+        {
+            Advance();
+            alias = Match(TokenType.IDENT);
+        }
+
+        MatchEOF();
+        var libSrc = Path.GetFullPath(Path.Combine(_filePath, LibPath, mod.STRTrimQ()));
+        if (!libSrc.StartsWith(_filePath, StringComparison.OrdinalIgnoreCase) || !File.Exists(libSrc))
+            _diagnostics.ReportInvalidImport(mod.Location, mod);
+
+        // 使用对象初始化器设置Alias属性
+        return new ImportStmt(keyword, mod, Path.Combine(_filePath, LibPath))
+        {
+            Alias = alias
+        };
+    }
+
+    private Statement ParseAssignmentOrDecl()
+    {
+        var destok = Advance();
+        TypeClauseSyntax? typeClause = null;
+
+        // Type annotation: $var:TYPE
+        if (Check(TokenType.COLON))
+        {
+            var colon = Advance();
+            var typeToken = Match(TokenType.IDENT);
+
+            // Array type annotation: $var:TYPE[] or $var:TYPE[NUM]
+            if (Check(TokenType.LeftBracket))
+            {
+                Advance();
+                // Check if it's dynamic length: $var:TYPE[]
+                if (Check(TokenType.RightBracket))
+                {
+                    // Dynamic length array: $var:TYPE[] - only for variables, not struct fields
+                    Advance();
+                    // If followed by =, it's a variable definition
+                    if (Check(TokenType.ASSIGN) || Current.Type.OperatorIsAug())
+                    {
+                        // Variable: $a:int[] = [1,2,3]
+                        typeClause = new TypeClauseSyntax(colon, typeToken, true);
+                    }
+                    else
+                    {
+                        // Struct field with dynamic length is not allowed
+                        _diagnostics.ReportUnexpectedToken(Current.Location, Current, TokenType.INT);
+                        return new StructFieldStmt(destok, destok.Value, typeToken.Value + "[]");
+                    }
+                }
+                else
+                {
+                    // Fixed length array: $var:TYPE[NUM] - only for struct fields
+                    var countToken = Match(TokenType.INT);
+                    Match(TokenType.RightBracket);
+                    MatchEOF();
+                    return new StructFieldStmt(destok, destok.Value, typeToken.Value + "[" + countToken.Value + "]");
+                }
+            }
+            else if (!Check(TokenType.ASSIGN) && !Current.Type.OperatorIsAug())
+            {
+                // Plain struct field: $name:TYPE (no assignment follows)
+                MatchEOF();
+                return new StructFieldStmt(destok, destok.Value, typeToken.Value);
+            }
+            else
+            {
+                // Variable with type: $a:int = 1
+                typeClause = new TypeClauseSyntax(colon, typeToken, false);
+            }
+        }
+
+        // Assignment (typed or untyped)
+        var target = ParseLhsTarget(destok);
+        var op = Match(t => t == TokenType.ASSIGN || t.OperatorIsAug());
+        var expr = ParseExpression();
+        MatchEOF();
+        return new AssignmentStmt(destok, target, op, expr, typeClause);
+    }
+
+    /// <summary>
+    /// 解析赋值左侧目标表达式：$var, $var[i], $var.field, $var.field[i].field2, ...
+    /// 只接受索引访问（无切片），不接受数组定义、括号、结构体初始化等右值表达式。
+    /// </summary>
+    private TargetExpr ParseLhsTarget(Token varToken)
+    {
+        var target = (TargetExpr)new VariableExpr(varToken);
+
+        while (!CursorEOF)
+        {
+            if (Check(TokenType.LeftBracket))
+            {
+                var lb = Advance();
+                var index = ParseExpression();
+                if (Check(TokenType.COLON))
+                    _diagnostics.ReportUnexpectedToken(Current.Location, Current, TokenType.RightBracket);
+                var rb = Match(TokenType.RightBracket);
+                target = new IndexVisitExpression(lb, target, index);
+            }
+            else if (Check(TokenType.DOT))
+            {
+                Advance();
+                var fieldToken = Match(TokenType.IDENT);
+                target = new FieldAccessExpr(fieldToken, target);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return target;
+    }
+
+    private StructStmt ParseStructDecl()
+    {
+        var structToken = Advance(); // consume STRUCT
+        var nameToken = Match(TokenType.IDENT);
+        MatchEOF();
+        return new StructStmt(structToken, nameToken.Value);
+    }
+
+    private ReturnStmt ParseReturn()
+    {
+        var returnTok = Match(TokenType.RETURN);
+        var eexp = CursorEOF ? null : ParseExpression();
+        MatchEOF();
+        return new ReturnStmt(returnTok, eexp);
+    }
+
+    private Statement ParseIfelse()
+    {
+        var iftok = Advance();
+        var expr = ParseExpression();
+        MatchEOF();
+        return iftok.Type switch
+        {
+            TokenType.IF => new IfStmt(iftok, expr),
+            _ => new ElseIf(iftok, expr),
+        };
+
+    }
+
+    private Statement ParseFor()
+    {
+        var forToken = Advance();
+        if (CursorEOF) // for next
+        {
+            return new For_Infinite(forToken);
+        }
+        var loopc = Match(type => type == TokenType.INT || type == TokenType.CONST || type == TokenType.VAR);
+        if (CursorEOF) // for count next
+        {
+            return new For_Static(forToken, Formatter.GetValueEx(loopc));
+        }
+        if (loopc.Type != TokenType.VAR)
+            _diagnostics.ReportUnexpectedToken(loopc.Location, loopc, TokenType.VAR);
+        Match(TokenType.ASSIGN);
+        var lower = ParseExpression();
+        Match(TokenType.TO);
+        var upper = ParseExpression();
+        return new For_Full(forToken, (VariableExpr)Formatter.GetValueEx(loopc), lower, upper);
+    }
+
+    private WhileStmt ParseWhile()
+    {
+        var start = Advance();
+        var expr = ParseExpression();
+        MatchEOF();
+        return new WhileStmt(start, expr);
+    }
+
+    private UntilStmt ParseUntil()
+    {
+        var start = Advance();
+        var expr = ParseExpression();
+        MatchEOF();
+        return new UntilStmt(start, expr);
+    }
+
+    private Statement ParseLoopCtrl()
+    {
+        if (Check(TokenType.BREAK))
+        {
+            var berk = Match(TokenType.BREAK);
+            if (CursorEOF) return new Break(berk);
+            var levelT = Match(TokenType.INT);
+            MatchEOF();
+            if (!uint.TryParse(levelT.Value, out var level)) _diagnostics.ReportInvalidNumber(levelT.Location, levelT.Value);
+            return new Break(berk, level);
+        }
+        else
+        {
+            var contT = Match(TokenType.CONTINUE);
+            MatchEOF();
+            return new Continue(contT);
+        }
+    }
+
+    /// <summary>
+    /// 解析手柄按键语句
+    // 键位码 [持续时间(ms)|DOWN|UP]
+    // LS|RS 方向|角度 [, 持续时间(ms)]
+    // LS|RS RESET
+    /// </summary>
+    private Statement ParsePadButtonStatement()
+    {
+        var firstKey = Advance();
+
+        if (firstKey.Type == TokenType.StickKeyword)
+        {
+            switch (Current.Type)
+            {
+                case TokenType.INT:
+                case TokenType.DirectionKeyword:
+                    var state = Advance();
+
+                    if (Check(TokenType.COMMA))
+                    {
+                        Advance();
+                        var duration = Match(type => type == TokenType.INT || type == TokenType.CONST || type == TokenType.VAR);
+                        MatchEOF();
+                        return new StickPress(firstKey, state.Value, Formatter.GetValueEx(duration));
+                    }
+                    else
+                    {
+                        MatchEOF();
+                        return new StickAct(firstKey, state.Value);
+                    }
+                case TokenType.ResetKeyword:
+                    Advance();
+                    MatchEOF();
+                    return new StickAct(firstKey, "RESET");
+            }
+        }
+        else
+        {
+            if (CursorEOF)
+            {
+                return new KeyPress(firstKey);
+            }
+            else if (Check(TokenType.INT) || Check(TokenType.CONST) || Check(TokenType.VAR))
+            {
+                var state = Advance();
+                MatchEOF();
+                return new KeyPress(firstKey, Formatter.GetValueEx(state));
+            }
+            else
+            {
+                var state = Match(TokenType.DirectionKeyword);
+                MatchEOF();
+                var isUp = state.Value.Equals("UP", StringComparison.CurrentCultureIgnoreCase);
+                var isDown = state.Value.Equals("DOWN", StringComparison.CurrentCultureIgnoreCase);
+                if (!isUp && !isDown) _diagnostics.ReportInvalidKeyActionStatement(state.Location, state);
+                return new KeyAct(firstKey, isUp);
+            }
+        }
+        _diagnostics.ReportInvalidKeyActionStatement(firstKey.Location, firstKey);
+        return new KeyAct(firstKey);
+    }
+
+    private Statement ParseNamedExpression()
+    {
+        var first = Match(TokenType.IDENT);
+
+        // 命名空间调用：IDENT.IDENT(args)
+        if (Check(TokenType.DOT))
+        {
+            Advance();
+            var funcName = Match(TokenType.IDENT);
+            var args = ParseArguments();
+            MatchEOF();
+            return new CallStmt(first, funcName.Value, [.. args], CallType.CallStmtWithArgs)
+            {
+                Namespace = first
+            };
+        }
+
+        switch (first.Value.ToLower())
+        {
+            case "wait":
+                var durat = Match(type => type == TokenType.INT || type == TokenType.CONST || type == TokenType.VAR);
+                MatchEOF();
+                return new Wait(first, Formatter.GetValueEx(durat));
+            case "call":
+                var fnname = Match(TokenType.IDENT);
+                MatchEOF();
+                return new CallStmt(first, fnname.Value, []);
+#if DEBUG
+            case "sprint":
+            case "smem":
+                var idxreg = Match(TokenType.INT);
+                MatchEOF();
+                var ism = first.Value.Equals("smem", StringComparison.CurrentCultureIgnoreCase);
+                return new SerialPrint(uint.Parse(Peek(1).Value), ism);
+#endif
+            default:
+                if (CursorEOF)
+                {
+                    _diagnostics.ReportInvalidExpressionStatement(first.Location);
+                }
+                var args = ParseArguments();
+                // v1 特例（行为偏差注记，LegacySyntax 语义单点）：PRINT 后接「&」时旧解析器
+                // 把 & 当分隔符吞掉；PRINT 后接调用/成员链时走下方 CallStmtWithArgs 字面量回退
+                // （不求值实参）。LegacySyntax=false（新语法模式）不执行该吞并。
+                if (_syntaxTree.LegacySyntax && first.Value.Equals("print", StringComparison.CurrentCultureIgnoreCase))
+                {
+                    if (Check(TokenType.BitAnd)) Advance();
+                }
+                MatchEOF();
+                return new CallStmt(first, first.Value, [.. args], CallType.CallStmtWithArgs);
+        }
+    }
+
+    #endregion
+
+    #region Expression Parsers
+
+    private BaseExpr ParseExpression(int parentPrecedence = 0)
+    {
+        BaseExpr left;
+        var unaryOperatorPrecedence = Current.Type.GetUnaryOperatorPrecedence();
+        if (unaryOperatorPrecedence != 0 && unaryOperatorPrecedence >= parentPrecedence && !CursorEOF)
+        {
+            var opToken = Advance();
+            var operand = ParseExpression(unaryOperatorPrecedence);
+            left = new UnaryExpression(opToken, operand);
+        }
+        else
+        {
+            left = ParsePrimary();
+        }
+
+        while (true && !CursorEOF)
+        {
+            var precedence = Current.Type.GetBinaryOperatorPrecedence();
+            if (precedence == 0 || precedence <= parentPrecedence)
+                break;
+
+            var opToken = Advance();
+            var right = ParseExpression(precedence);
+            left = new BinaryExpression(opToken, left, right);
+        }
+
+        return left;
+    }
+
+    private BaseExpr ParsePrimary()
+    {
+        BaseExpr primary;
+        switch (Current.Type)
+        {
+            case TokenType.STRING:
+            case TokenType.CONST:
+                var tokenct = Advance();
+                primary = Formatter.GetValueEx(tokenct);
+                // 常量/运行时变量后跟 ( → 函数调用（如 __CAPTURE__(args)）
+                if (Check(TokenType.LeftParen))
+                {
+                    var openParen = Match(TokenType.LeftParen);
+                    var arguments = ParseArguments();
+                    var closeParen = Match(TokenType.RightParen);
+                    primary = new Callv1Expression(tokenct, openParen, arguments, closeParen);
+                }
+                return ParsePostfixChain(primary);
+            case TokenType.VAR:
+            case TokenType.EX_VAR:
+                var token = Advance();
+                primary = Formatter.GetValueEx(token);
+                // 变量后跟 ( → 函数调用（如 $fn(args)）
+                if (Check(TokenType.LeftParen))
+                {
+                    var openParen = Match(TokenType.LeftParen);
+                    var arguments = ParseArguments();
+                    var closeParen = Match(TokenType.RightParen);
+                    primary = new Callv1Expression(token, openParen, arguments, closeParen);
+                }
+                return ParsePostfixChain(primary);
+            case TokenType.LeftBracket:
+                primary = ParseIndexDefExpression();
+                return ParsePostfixChain(primary);
+            case TokenType.LeftParen:
+                var lp = Advance();
+                var expression = ParseExpression();
+                var rp = Match(TokenType.RightParen);
+                return ParsePostfixChain(new ParenthesizedExpression(lp, expression, rp));
+            case TokenType.IDENT:
+                primary = Peek(1).Type == TokenType.OpenBrace
+                    ? ParseStructInit()
+                    : ParseCallExpression();
+                return ParsePostfixChain(primary);
+            case TokenType.INT:
+                var toknum = Advance();
+                var ok = int.TryParse(toknum.Value, out var intval);
+                if (!ok) _diagnostics.ReportInvalidNumber(toknum.Location, toknum.Value);
+                return new LiteralExpr(toknum, intval);
+            case TokenType.Number:
+                var tokdbl = Advance();
+                var okd = double.TryParse(tokdbl.Value, out var dblval);
+                if (!okd) _diagnostics.ReportInvalidNumber(tokdbl.Location, tokdbl.Value);
+                return new LiteralExpr(tokdbl, dblval);
+            default:
+                var tokdef = Advance();
+                _diagnostics.ReportUnexpectedToken(tokdef.Location, tokdef, TokenType.INT);
+                return new LiteralExpr(tokdef, 0);
+        }
+    }
+
+    /// <summary>
+    /// 解析后缀链：.field 和 [expr/start:end] 的任意组合。
+    /// 适用于右值表达式（ParsePrimary 中的所有分支）。
+    /// </summary>
+    private BaseExpr ParsePostfixChain(BaseExpr expr)
+    {
+        while (!CursorEOF)
+        {
+            if (Check(TokenType.LeftBracket))
+                expr = ParseSliceExpression(expr);
+            else if (Check(TokenType.DOT))
+            {
+                Advance();
+                var fieldToken = Match(TokenType.IDENT);
+                expr = new FieldAccessExpr(fieldToken, expr);
+            }
+            else
+                break;
+        }
+        return expr;
+    }
+
+    private BaseExpr ParseStructInit()
+    {
+        var nameToken = Match(TokenType.IDENT);
+        var lb = Match(TokenType.OpenBrace);
+        var rb = Match(TokenType.CloseBrace);
+        return new StructInitExpr(nameToken, lb, rb);
+    }
+
+    private BaseExpr ParseCallExpression()
+    {
+        var identifier = Match(TokenType.IDENT);
+
+        // 检查是否是命名空间调用: name.func()
+        if (Check(TokenType.DOT))
+        {
+            Advance();
+            var member = Match(TokenType.IDENT);
+            var openParenToken = Match(TokenType.LeftParen);
+            var argumentsList = ParseArguments();
+            var closeParenToken = Match(TokenType.RightParen);
+
+            // 创建命名空间调用表达式
+            return new NamespaceCallExpr(identifier, member, openParenToken, argumentsList, closeParenToken);
+        }
+
+        var openParen = Match(TokenType.LeftParen);
+        var arguments = ParseArguments();
+        var closeParen = Match(TokenType.RightParen);
+        return new Callv1Expression(identifier, openParen, arguments, closeParen);
+    }
+
+    // [1,2,3] or []int
+    private BaseExpr ParseIndexDefExpression()
+    {
+        var lb = Match(TokenType.LeftBracket, "语法需要'['");
+        var items = ImmutableArray.CreateBuilder<BaseExpr>();
+        var parseNext = true;
+        while (parseNext && !Check(TokenType.RightBracket) && !CursorEOF)
+        {
+            items.Add(ParsePrimary());
+            if (Check(TokenType.COMMA))
+                Advance();
+            else
+                parseNext = false;
+        }
+        var rb = Match(TokenType.RightBracket, "语法需要']'");
+
+        // 可选的类型标注：[]int, []string 等
+        Token? elementTypeToken = null;
+        if (Check(TokenType.IDENT))
+        {
+            elementTypeToken = Advance();
+        }
+
+        return new IndexDefExpression(lb, [.. items], rb, elementTypeToken);
+    }
+
+    // baseExpr[expr] or baseExpr[start:end]
+    private BaseExpr ParseSliceExpression(BaseExpr baseExpr)
+    {
+        var lb = Match(TokenType.LeftBracket, "语法需要'[");
+
+        var ommitstart = Check(TokenType.COLON);
+        var start = Check(TokenType.COLON) ? new LiteralExpr(Current, 0) : ParseExpression();
+        // [expr]
+        if (Check(TokenType.RightBracket))
+        {
+            var rb = Advance();
+            return new IndexVisitExpression(lb, baseExpr, start);
+        }
+        // [start:end]
+        Match(TokenType.COLON, "语法不正确[<start>:<end>]");
+
+        var end = Check(TokenType.RightBracket) ? new LiteralExpr(Current, "") : ParseExpression();
+        Match(TokenType.RightBracket, "语法需要']'");
+        return new SliceExpression(lb, baseExpr, start, end, ommitstart);
+    }
+
+    private ImmutableArray<BaseExpr> ParseArguments()
+    {
+        var args = ImmutableArray.CreateBuilder<BaseExpr>();
+        var parseNext = true;
+        while (parseNext && !Check(TokenType.RightParen) && !CursorEOF)
+        {
+            args.Add(ParseExpression());
+            if (Check(TokenType.COMMA))
+                Advance();
+            else
+                parseNext = false;
+        }
+        return args.ToImmutable();
+    }
+
+    #endregion
+
+    #region Function Declaration Parsers
+
+    private FuncStmt ParseFuncDecl()
+    {
+        var functionToken = Advance();
+        var functionName = Match(TokenType.IDENT, "函数声明需要函数名");
+
+        var hasPar = false;
+        var parameters = ImmutableArray<ParameterSyntax>.Empty;
+        if (Check(TokenType.LeftParen))
+        {
+            Match(TokenType.LeftParen);
+            hasPar = true;
+            parameters = ParseParameterList();
+            Match(TokenType.RightParen, "函数声明缺少右括号");
+        }
+        var typeClause = ParseOptionalTypeClause();
+
+        MatchEOF();
+        return new FuncStmt(functionName, parameters, hasPar, typeClause);
+    }
+
+    private ImmutableArray<ParameterSyntax> ParseParameterList()
+    {
+        var parameters = ImmutableArray.CreateBuilder<ParameterSyntax>();
+
+        var parseNext = true;
+        while (parseNext && !Check(TokenType.RightParen) && !CursorEOF)
+        {
+            parameters.Add(ParseParameter());
+            if (Check(TokenType.COMMA))
+                Advance();
+            else
+                parseNext = false;
+        }
+        return parameters.ToImmutable();
+    }
+
+    private ParameterSyntax ParseParameter()
+    {
+        var identifier = Match(TokenType.VAR, "函数参数只能是变量");
+        var parameter = (VariableExpr)Formatter.GetValueEx(identifier);
+        var type = ParseOptionalTypeClause();
+        return new ParameterSyntax(parameter, type);
+    }
+
+    private TypeClauseSyntax? ParseOptionalTypeClause()
+    {
+        if (!Check(TokenType.COLON))
+            return null;
+        return ParseTypeClause();
+    }
+
+    private TypeClauseSyntax ParseTypeClause()
+    {
+        var colonToken = Match(TokenType.COLON);
+        var identifier = Match(TokenType.IDENT);
+        var isArray = false;
+        if (Check(TokenType.LeftBracket))
+        {
+            Advance();
+            Match(TokenType.RightBracket, "数组类型标注需要右方括号");
+            isArray = true;
+        }
+        return new TypeClauseSyntax(colonToken, identifier, isArray);
+    }
+
+    private ExternFuncStmt ParseExternFunc()
+    {
+        var externToken = Advance(); // consume EXTERN
+
+        // Expect FUNC keyword
+        var funcToken = Match(TokenType.FUNC, "EXTERN 后需要 FUNC 关键字");
+
+        // Function name
+        var functionName = Match(TokenType.IDENT, "EXTERN FUNC 需要函数名");
+
+        // Parameter list (parentheses required)
+        Match(TokenType.LeftParen, "EXTERN FUNC 声明需要左括号");
+        var parameters = ParseParameterList();
+        Match(TokenType.RightParen, "EXTERN FUNC 声明缺少右括号");
+
+        // Return type (optional)
+        var returnType = ParseOptionalTypeClause();
+
+        // Optional: AS "export_name"
+        Token? asToken = null;
+        Token? exportName = null;
+        if (Current.Type == TokenType.AS)
+        {
+            asToken = Advance();
+            exportName = Match(TokenType.STRING, "AS 后需要导出函数名字符串");
+        }
+
+        // FROM keyword
+        var fromToken = Match(TokenType.FROM, "EXTERN FUNC 声明需要 FROM 关键字");
+
+        // Library path string
+        var libraryPath = Match(TokenType.STRING, "FROM 后需要库路径字符串");
+
+        MatchEOF();
+        return new ExternFuncStmt(externToken, functionName, parameters, returnType!, fromToken, libraryPath, asToken, exportName);
+    }
+
+    #endregion
+}

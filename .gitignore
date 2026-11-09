@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+artifacts/
+work/
+settings.json
+settings.json.*
+projects/
+logs/
+*.user
+*.local.*
+firmware/**/secrets.h
+firmware/**/WakeConfig.h
+firmware/binaries/
+firmware/**/build/
