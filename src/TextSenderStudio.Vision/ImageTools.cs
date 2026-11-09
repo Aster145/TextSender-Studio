@@ -39,6 +39,20 @@ public static class ImageTools
         return FromMat(cropped) with { CapturedAt = frame.CapturedAt };
     }
 
+    /// <summary>Preview the exact preprocessing used by matching, without changing the saved source image.</summary>
+    public static FrameSnapshot Preprocess(FrameSnapshot frame, ImageLabel label)
+    {
+        TemplateMatcher.ValidateOptions(label);
+        using var source = Decode(frame.Png);
+        using var processed = TemplateMatcher.Prepare(source, label);
+        if (source.Channels() != 4) return FromMat(processed) with { CapturedAt = frame.CapturedAt };
+        using var preview = new Mat();
+        Cv2.CvtColor(processed, preview, processed.Channels() == 1 ? ColorConversionCodes.GRAY2BGRA : ColorConversionCodes.BGR2BGRA);
+        using var alpha = new Mat();
+        Cv2.ExtractChannel(source, alpha, 3); Cv2.InsertChannel(alpha, preview, 3);
+        return FromMat(preview) with { CapturedAt = frame.CapturedAt };
+    }
+
     public static void ValidateRegion(PixelRegion region, int width, int height)
     {
         if (region.X < 0 || region.Y < 0 || region.Width <= 0 || region.Height <= 0 ||
@@ -50,10 +64,15 @@ public static class ImageTools
     internal static Mat Decode(byte[] bytes)
     {
         if (bytes.Length == 0) throw new InvalidDataException("图片内容为空。");
-        var mat = Cv2.ImDecode(bytes, ImreadModes.Color);
-        if (!mat.Empty()) return mat;
-        mat.Dispose();
-        throw new InvalidDataException("无法读取图片，请选择有效的 PNG、JPEG 或 BMP。");
+        var mat = Cv2.ImDecode(bytes, ImreadModes.Unchanged);
+        if (mat.Empty()) { mat.Dispose(); throw new InvalidDataException("无法读取图片，请选择有效的 PNG、JPEG 或 BMP。"); }
+        if (mat.Depth() == MatType.CV_16U)
+        {
+            var normalized = new Mat(); mat.ConvertTo(normalized, MatType.CV_8U, 1.0 / 256); mat.Dispose(); mat = normalized;
+        }
+        if (mat.Depth() != MatType.CV_8U || mat.Channels() is not (1 or 3 or 4))
+        { mat.Dispose(); throw new InvalidDataException("图片须为灰度、RGB 或 RGBA 格式。"); }
+        return mat;
     }
     internal static byte[] Encode(Mat mat)
     {
@@ -61,42 +80,4 @@ public static class ImageTools
         return bytes;
     }
     internal static FrameSnapshot FromMat(Mat mat) => new(Encode(mat), mat.Width, mat.Height, DateTimeOffset.UtcNow);
-}
-
-public static class TemplateMatcher
-{
-    public static MatchResult Match(FrameSnapshot frame, FrameSnapshot template, ImageLabel label)
-    {
-        if (!double.IsFinite(label.Threshold) || label.Threshold < 0 || label.Threshold > 1)
-            throw new ArgumentOutOfRangeException(nameof(label), "匹配阈值须在 0–1 之间。");
-        using var image = ImageTools.Decode(frame.Png);
-        using var target = ImageTools.Decode(template.Png);
-        var roi = label.SearchRegion ?? new PixelRegion { Width = image.Width, Height = image.Height };
-        ImageTools.ValidateRegion(roi, image.Width, image.Height);
-        if (target.Width > roi.Width || target.Height > roi.Height)
-            throw new InvalidOperationException("目标图片大于搜索区域，请扩大识图区域或重新截取标签。");
-        using var search = new Mat(image, ImageTools.ToRect(roi));
-        using var searchGray = new Mat();
-        using var targetGray = new Mat();
-        Mat source = search, needle = target;
-        if (label.Grayscale)
-        {
-            Cv2.CvtColor(search, searchGray, ColorConversionCodes.BGR2GRAY);
-            Cv2.CvtColor(target, targetGray, ColorConversionCodes.BGR2GRAY);
-            source = searchGray;
-            needle = targetGray;
-        }
-        Cv2.MeanStdDev(needle, out _, out Scalar deviation);
-        var variance = deviation.Val0 * deviation.Val0 + deviation.Val1 * deviation.Val1 + deviation.Val2 * deviation.Val2;
-        if (variance < 0.01)
-            throw new InvalidOperationException("标签图片为纯色或几乎没有细节，无法可靠匹配。请框选包含文字、边缘或图案的区域。");
-        using var result = new Mat();
-        Cv2.MatchTemplate(source, needle, result, TemplateMatchModes.CCoeffNormed);
-        Cv2.MinMaxLoc(result, out _, out var maximum, out _, out var location);
-        var score = double.IsFinite(maximum) ? Math.Clamp(maximum, 0, 1) : 0;
-        return new MatchResult(score, score >= label.Threshold, new PixelRegion
-        {
-            X = roi.X + location.X, Y = roi.Y + location.Y, Width = needle.Width, Height = needle.Height
-        });
-    }
 }

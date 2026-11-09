@@ -1,4 +1,6 @@
 using System.Windows.Controls;
+using System.Windows;
+using System.Windows.Input;
 using System.Windows.Threading;
 using TextSenderStudio;
 using TextSenderStudio.Core.Scripting;
@@ -8,6 +10,9 @@ internal static class ScriptEditorChecks
     public static void Run(MainWindow main, Action<bool, string> check)
     {
         var editor = (ScriptEditorBox)main.FindName("ScriptEditor");
+        var editToggle = (CheckBox)main.FindName("MainScriptEditToggle");
+        bool? wasEditing = editToggle.IsChecked;
+        editToggle.IsChecked = true;
         ((TabControl)main.FindName("MainTabs")).SelectedIndex = 0;
         main.UpdateLayout();
         string before = editor.Text;
@@ -27,12 +32,30 @@ internal static class ScriptEditorChecks
             editor.ShowCompletion();
             check(editor.CompletionOpen && editor.VisibleCompletions.Select(c => c.Text).SequenceEqual(["phrase_hello"]), "CALL completion filters current project functions");
             editor.AcceptCompletion();
-            check(editor.Text == "CALL phrase_hello" && !editor.CompletionOpen, "completion inserts selected function at caret");
+            check(editor.Text == "CALL phrase_hello" && !editor.CompletionOpen && editor.CaretIndex == editor.Text.Length, "completion inserts selected function and leaves caret after it");
             editor.Undo(); check(editor.Text == "CALL phrase_he", "completion remains one native undo operation");
             check(EditorSyntax.Complete("$score = @画", 11, editor.ResourceCompletions).Single().Text == "@画面标签", "image label completion supports Chinese names");
             check(EditorSyntax.Complete("# CALL ph", 9, editor.ResourceCompletions).Count == 0 && EditorSyntax.Complete("SEND_TEXT \"ph", 13, editor.ResourceCompletions).Count == 0, "completion does not alter comments or strings");
             editor.Text = "IF 1 == 1"; editor.CaretIndex = editor.Text.Length; editor.InsertIndentedNewLine();
             check(editor.Text.Replace("\r\n", "\n") == "IF 1 == 1\n    ", "Enter indents new conditional block");
+            editor.CloseCompletion(); editor.Text = "WAIT 500"; editor.Select(editor.Text.Length, 0);
+            var enter = PressEnter(editor);
+            check(enter.Handled && editor.Text.Replace("\r\n", "\n") == "WAIT 500\n" && editor.CaretIndex == editor.Text.Length && editor.TextArea.Caret.Line == 2 && editor.SelectionLength == 0,
+                $"routed Enter at line end moves caret onto next line (line={editor.TextArea.Caret.Line}, caret={editor.CaretIndex})");
+            editor.Undo(); check(editor.Text == "WAIT 500", "routed Enter is one undo operation");
+            editor.Text = "FOR 2\r\n    WAIT 500\r\nNEXT"; editor.Select(editor.Text.IndexOf("\r\nNEXT", StringComparison.Ordinal), 0);
+            PressEnter(editor);
+            check(editor.Text == "FOR 2\r\n    WAIT 500\r\n    \r\nNEXT" && editor.TextArea.Caret.Line == 3 && editor.TextArea.Caret.Column == 5,
+                "routed Enter in indented CRLF source places caret after next-line indentation");
+            editor.Text = "PRINT \"文字\""; editor.Select(editor.Text.Length, 0); PressEnter(editor);
+            check(editor.Text.Replace("\r\n", "\n") == "PRINT \"文字\"\n" && editor.TextArea.Caret.Line == 2,
+                "routed Enter after quoted payload preserves content and moves to next line");
+            editor.Text = "CALL phrase_hello"; editor.Select(editor.Text.Length, 0); editor.ShowCompletion(); PressEnter(editor);
+            check(editor.Text.Replace("\r\n", "\n") == "CALL phrase_hello\n" && editor.TextArea.Caret.Line == 2 && !editor.CompletionOpen,
+                "Enter with an already complete suggestion inserts a newline");
+            editor.Text = "CALL phrase_he"; editor.Select(editor.Text.Length, 0); editor.ShowCompletion(); PressEnter(editor);
+            check(editor.Text == "CALL phrase_hello" && editor.CaretIndex == editor.Text.Length && !editor.CompletionOpen,
+                "Enter still accepts a partial suggestion and keeps caret at completion end");
             editor.Text = "WAIT 500"; editor.Select(5, 3); editor.InsertIndentedNewLine();
             check(editor.Text.Replace("\r\n", "\n") == "WAIT \n", "Enter replaces selected text instead of retaining it");
             editor.Undo(); check(editor.Text == "WAIT 500", "Enter selection replacement is one undo operation");
@@ -88,6 +111,17 @@ internal static class ScriptEditorChecks
         {
             editor.CloseCompletion(); editor.ScriptMode = true; editor.ResourceCompletions = resourcesBefore; editor.NavigateResource = navigateBefore;
             editor.Text = before; editor.CaretIndex = 0; editor.ScrollToHome();
+            editToggle.IsChecked = wasEditing;
         }
+    }
+
+    private static KeyEventArgs PressEnter(ScriptEditorBox editor)
+    {
+        var source = PresentationSource.FromVisual(editor) ?? throw new InvalidOperationException("Editor must be in a rendered test window.");
+        var preview = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Enter) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+        editor.TextArea.RaiseEvent(preview);
+        if (!preview.Handled)
+            editor.TextArea.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Enter) { RoutedEvent = Keyboard.KeyDownEvent });
+        return preview;
     }
 }

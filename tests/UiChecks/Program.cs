@@ -36,6 +36,8 @@ internal static class Program
             main = new MainWindow { Width = 1280, Height = 900, Left = -20000, Top = -20000, WindowStartupLocation = WindowStartupLocation.Manual, ShowActivated = false };
             main.Show(); Pump();
             Check(Control<TabControl>(main, "MainTabs").Items.Count == 4, "four independent script, text, image and HTTP tabs");
+            Check(Descendants<ImageRegionView>((DependencyObject)Control<TabItem>(main, "ImageLabelsTab").Content).Contains(Control<ImageRegionView>(main, "CaptureView")), "capture and recognition preview belongs to image-label tab");
+            Check(Descendants<TextBox>((DependencyObject)Control<TabItem>(main, "MainScriptTab").Content).Contains(Control<TextBox>(main, "ScriptOutputBox")) && main.FindName("LogBox") == null, "main script contains focused output log and no detailed log");
             Check(Control<FrameworkElement>(main, "ManualPanel").Visibility == Visibility.Collapsed, "manual controller panel starts hidden");
             Check(Control<Panel>(main, "PhrasesPanel").Children.OfType<Button>().Single().Content?.ToString() == "主项目短语", "current project phrases loaded");
             var editor = Control<ScriptEditorBox>(main, "ScriptEditor"); editor.Text = "PRINT 项目一已保存\nWAIT 0";
@@ -46,15 +48,18 @@ internal static class Program
             projects.SelectedIndex = 0; Pump();
             Check(editor.Text.Contains("项目一已保存"), "switching back restores saved script");
             _checks += HttpEditorChecks.Run(main, store, output);
+            ScriptEditingChecks.Run(main, store, Check);
             ScriptEditorChecks.Run(main, Check);
             IndentationChecks.Run(main, Check);
             SaveShortcutChecks.Run(main, store, Check);
             ExecutionMarkerChecks.Run(main, Check);
             ExecutionPositionChecks.Run(main, Check, (window, name) => Capture(window, Path.Combine(output, name)));
             RuntimeResourceChecks.Run(main, store, Check);
+            ScriptLogChecks.Run(main, Check);
             ManualControlChecks.Run(main, Check, (window, name) => Capture(window, Path.Combine(output, name)));
             ControllerWindowChecks.Run(main, Check, (window, name) => Capture(window, Path.Combine(output, name)));
             DialogEditorChecks.Run(main, Check, (window, name) => Capture(window, Path.Combine(output, name)));
+            LabelEditorChecks.Run(main, Check, (window, name) => Capture(window, Path.Combine(output, name)));
 
             var settingsBefore = store.LoadSettings();
             OpenSettings(main, dialog =>
@@ -115,7 +120,8 @@ internal static class Program
             typeof(MainWindow).GetMethod("RefreshResources", HiddenInstance)!.Invoke(main, null);
             Control<TabControl>(main, "MainTabs").SelectedIndex = 2; Pump();
             Capture(main, Path.Combine(output, "labels.png"));
-            main.Width = 1000; main.Height = 720;
+            main.Width = 1000; main.Height = 720; Pump();
+            Capture(main, Path.Combine(output, "labels-1000x720.png"));
             Control<TabControl>(main, "MainTabs").SelectedIndex = 1; Pump();
             var sendText = Control<Button>(main, "SendTextButton");
             var sendPosition = sendText.TranslatePoint(new Point(), main);

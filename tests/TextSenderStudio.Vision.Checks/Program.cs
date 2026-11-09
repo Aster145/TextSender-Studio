@@ -73,4 +73,5 @@ Check(service.GetLatestFrame() is null, "idle stop is idempotent");
 using var canceled = new CancellationTokenSource();canceled.Cancel();
 try { await service.StartAsync(new CaptureSettings(), canceled.Token); throw new Exception("canceled start accepted"); }
 catch (OperationCanceledException) { checks++; }
+LabelAlgorithmsChecks.Run(Check);
 Console.WriteLine($"Vision checks passed: {checks}. Synthetic images only; no camera or screen capture started.");

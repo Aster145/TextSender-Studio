@@ -11,7 +11,7 @@ public partial class MainWindow
 {
     private void TextSendChanged(object sender, TextChangedEventArgs e)
     {
-        if (!_initializing && TextSaveState != null) TextSaveState.Text = "未保存";
+        if (!_initializing) UpdateDocumentSaveState();
     }
 
     private void SaveTextClick(object sender, RoutedEventArgs e)

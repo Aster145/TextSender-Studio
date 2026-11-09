@@ -96,9 +96,14 @@ public sealed class ImageLabel
 {
     public string Name { get; set; } = "新标签";
     public string ImagePath { get; set; } = "";
+    public string? SourceImagePath { get; set; }
+    public PixelRegion? TargetRegion { get; set; }
     public PixelRegion? SearchRegion { get; set; }
     public double Threshold { get; set; } = 0.90;
     public bool Grayscale { get; set; }
+    public bool Binary { get; set; }
+    public bool GaussianBlur { get; set; }
+    public string SearchMethod { get; set; } = "CCoeffNormed";
     public override string ToString() => Name;
 }
 

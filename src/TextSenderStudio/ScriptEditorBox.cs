@@ -88,7 +88,7 @@ public sealed class ScriptEditorBox : TextEditor
                 Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => ShowCompletion(false)));
         };
         LostKeyboardFocus += (_, _) => CloseCompletion();
-        ToolTip = "Ctrl+S 格式化并保存 · Ctrl+Space 补全 · Tab / Shift+Tab 缩进 · 双击函数 / F12 跳转 · 点击行号旁的标记折叠";
+        ToolTip = "Ctrl+S 保存 · Ctrl+Space 补全 · Ctrl+/ 切换注释 · Ctrl+Shift+/ 取消注释 · Tab / Shift+Tab 缩进 · 双击函数 / F12 跳转 · 点击行号旁的标记折叠";
     }
 
     public void RefreshStructure()
@@ -180,6 +180,7 @@ public sealed class ScriptEditorBox : TextEditor
 
     public void AcceptCompletion()
     {
+        if (!ScriptMode || IsReadOnly) { CloseCompletion(); return; }
         if (_suggestions.SelectedItem is not EditorCompletion item) return;
         var (start, end) = EditorSyntax.TokenAt(Text, CaretIndex);
         ReplaceText(start, end - start, item.Text); CloseCompletion(); Focus();
@@ -187,10 +188,15 @@ public sealed class ScriptEditorBox : TextEditor
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
+        if (ScriptMode && e.Key == Key.F12) { NavigateAt(CaretIndex); e.Handled = true; return; }
         if (ScriptMode && !IsReadOnly)
         {
+            if (e.Key is Key.OemQuestion or Key.Divide && (Keyboard.Modifiers == ModifierKeys.Control || Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift)))
+            {
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) UncommentSelection(); else ToggleCommentSelection();
+                e.Handled = true; return;
+            }
             if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.Control) { ShowCompletion(); e.Handled = true; return; }
-            if (e.Key == Key.F12) { NavigateAt(CaretIndex); e.Handled = true; return; }
             if (_popup.IsOpen)
             {
                 if (e.Key is Key.Up or Key.Down)
@@ -199,7 +205,15 @@ public sealed class ScriptEditorBox : TextEditor
                     _suggestions.ScrollIntoView(_suggestions.SelectedItem); e.Handled = true; return;
                 }
                 if (e.Key == Key.Escape) { CloseCompletion(); e.Handled = true; return; }
-                if ((e.Key is Key.Enter or Key.Tab) && Keyboard.Modifiers == ModifierKeys.None) { AcceptCompletion(); e.Handled = true; return; }
+                if ((e.Key is Key.Enter or Key.Tab) && Keyboard.Modifiers == ModifierKeys.None)
+                {
+                    var (tokenStart, tokenEnd) = EditorSyntax.TokenAt(Text, CaretIndex);
+                    bool alreadyComplete = _suggestions.SelectedItem is EditorCompletion chosen && CaretIndex == tokenEnd
+                        && Text[tokenStart..tokenEnd] == chosen.Text;
+                    if (e.Key == Key.Enter && alreadyComplete) { CloseCompletion(); InsertIndentedNewLine(); }
+                    else AcceptCompletion();
+                    e.Handled = true; return;
+                }
                 if (e.Key is Key.Left or Key.Right or Key.Home or Key.End or Key.PageUp or Key.PageDown) CloseCompletion();
             }
             if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None) { InsertIndentedNewLine(); e.Handled = true; return; }
@@ -236,6 +250,7 @@ public sealed class ScriptEditorBox : TextEditor
 
     public void InsertIndentedNewLine()
     {
+        if (!ScriptMode || IsReadOnly) return;
         // Enter replaces the selection, regardless of which end contains the caret.
         int insertion = SelectionStart;
         int start = insertion == 0 ? 0 : Text.LastIndexOf('\n', insertion - 1) + 1;
@@ -266,6 +281,7 @@ public sealed class ScriptEditorBox : TextEditor
 
     public void IndentSelection(bool unindent)
     {
+        if (!ScriptMode || IsReadOnly) return;
         CloseCompletion();
         if (SelectionLength == 0 && !unindent)
         { ReplaceText(CaretIndex, 0, new string(' ', EditorSyntax.IndentSize)); return; }
@@ -314,10 +330,64 @@ public sealed class ScriptEditorBox : TextEditor
         return true;
     }
 
+    public bool CommentSelection() => ChangeComments(false, false);
+    public bool UncommentSelection() => ChangeComments(true, false);
+    public bool ToggleCommentSelection() => ChangeComments(false, true);
+
+    private bool ChangeComments(bool remove, bool toggle)
+    {
+        if (!ScriptMode || IsReadOnly) return false;
+        int selectionStart = SelectionStart, selectionEnd = SelectionStart + SelectionLength, oldCaret = CaretIndex;
+        var first = Document.GetLineByOffset(selectionStart);
+        var last = Document.GetLineByOffset(selectionEnd > selectionStart ? selectionEnd - 1 : selectionEnd);
+        var lines = new List<(int Offset, string Content)>();
+        for (var line = first; line != null && line.LineNumber <= last.LineNumber; line = line.NextLine)
+        {
+            string text = Document.GetText(line);
+            int indent = EditorSyntax.LeadingWhitespace(text).Length;
+            if (indent < text.Length) lines.Add((line.Offset + indent, text[indent..]));
+        }
+        if (toggle) remove = lines.Count > 0 && lines.All(line => line.Content.StartsWith('#'));
+        var changes = new List<(int Offset, int Remove, string Insert)>();
+        foreach (var line in lines)
+        {
+            bool commented = line.Content.StartsWith('#');
+            if (remove && commented) changes.Add((line.Offset, line.Content.StartsWith("# ", StringComparison.Ordinal) ? 2 : 1, ""));
+            else if (!remove && !commented) changes.Add((line.Offset, 0, "# "));
+        }
+        if (changes.Count == 0) return false;
+        int Map(int original)
+        {
+            int delta = 0;
+            foreach (var change in changes)
+            {
+                if (original < change.Offset) break;
+                if (original < change.Offset + change.Remove) return change.Offset + delta;
+                delta += change.Insert.Length - change.Remove;
+            }
+            return original + delta;
+        }
+        int start = Map(selectionStart), end = Map(selectionEnd), caret = Map(oldCaret);
+        double vertical = VerticalOffset, horizontal = HorizontalOffset;
+        _changing = true; Document.BeginUpdate();
+        try
+        {
+            // Edit the full document, including folded bodies, from the bottom up.
+            for (int i = changes.Count - 1; i >= 0; i--)
+            { var change = changes[i]; Document.Replace(change.Offset, change.Remove, change.Insert); }
+            Select(start, end - start); TextArea.Caret.Offset = caret;
+        }
+        finally { Document.EndUpdate(); _changing = false; }
+        ScrollToVerticalOffset(vertical); ScrollToHorizontalOffset(horizontal); CloseCompletion();
+        return true;
+    }
+
     private void ReplaceText(int start, int length, string value)
     {
         _changing = true; Document.BeginUpdate();
-        try { Select(start, length); SelectedText = value; CaretIndex = start + value.Length; SelectionLength = 0; }
+        // AvalonEdit SelectedText keeps the inserted text selected. Setting
+        // SelectionLength=0 afterward would move back to the selection's start.
+        try { Document.Replace(start, length, value); Select(start + value.Length, 0); }
         finally { Document.EndUpdate(); _changing = false; }
     }
 

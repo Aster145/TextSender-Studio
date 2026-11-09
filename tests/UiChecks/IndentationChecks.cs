@@ -58,6 +58,8 @@ internal static class IndentationChecks
             "folding supports generic END and does not open external function declarations");
 
         var editor = (ScriptEditorBox)main.FindName("ScriptEditor");
+        var editToggle = (CheckBox)main.FindName("MainScriptEditToggle");
+        bool? wasEditing = editToggle.IsChecked; editToggle.IsChecked = true;
         ((TabControl)main.FindName("MainTabs")).SelectedIndex = 0;
         string before = editor.Text;
         try
@@ -75,6 +77,6 @@ internal static class IndentationChecks
             editor.ScriptMode = false; editor.Text = pasted;
             check(!editor.FormatIndentation() && editor.Text == pasted, "ordinary text save keeps original whitespace unchanged");
         }
-        finally { editor.ScriptMode = true; editor.Text = before; editor.Select(0, 0); editor.CloseCompletion(); }
+        finally { editor.ScriptMode = true; editor.Text = before; editor.Select(0, 0); editor.CloseCompletion(); editToggle.IsChecked = wasEditing; }
     }
 }

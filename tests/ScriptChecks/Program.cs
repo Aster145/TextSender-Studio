@@ -74,6 +74,7 @@ try { await Run("EXTERN FUNC hidden() FROM \"user32.dll\"\nCALL hidden"); throw 
 catch (StudioScriptException) { Check(true, "external host function is not silently loaded"); }
 await ExecutionTrackingChecks.Run(engine, Check);
 await PadStateChecks.Run(engine, Check);
+await ScriptOutputChecks.Run(engine, Check);
 Console.WriteLine($"Script checks passed: {checks}");
 
 sealed class FakeActions(string[] functionNames) : IScriptActions, IStatefulScriptActions

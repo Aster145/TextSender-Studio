@@ -12,6 +12,8 @@ internal static class ExecutionPositionChecks
     {
         var toggle = (CheckBox)main.FindName("ShowExecutionPositionCheck");
         var editor = (ScriptEditorBox)main.FindName("ScriptEditor");
+        var editToggle = (CheckBox)main.FindName("MainScriptEditToggle");
+        bool? wasEditing = editToggle.IsChecked; editToggle.IsChecked = true;
         var tabs = (TabControl)main.FindName("MainTabs");
         var status = (TextBlock)main.FindName("ExecutionPositionStatus");
         var timer = (DispatcherTimer)typeof(MainWindow).GetField("_executionPositionTimer", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(main)!;
@@ -65,6 +67,7 @@ internal static class ExecutionPositionChecks
             cancel.Cancel();
             if (running is { IsCompleted: false }) Until(() => running.IsCompleted, 2000);
             toggle.IsChecked = wasEnabled; tabs.SelectedIndex = 0; editor.Text = original;
+            editToggle.IsChecked = wasEditing;
         }
     }
 

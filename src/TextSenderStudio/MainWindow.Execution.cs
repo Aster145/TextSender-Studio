@@ -87,9 +87,14 @@ public partial class MainWindow
         var tracker = new ScriptExecutionTracker { Enabled = _settings.ShowExecutionPosition };
         _executionTracker = tracker;
         ConfigureExecutionPosition();
-        try { await _engine.RunAsync(source, actions, token, tracker); }
+        AppendScriptOutput("开始", ScriptFileName.Text);
+        var ending = "已完成";
+        try { await _engine.RunAsync(source, actions, token, tracker, output => AppendScriptOutput(output.Kind == ScriptOutputKind.Print ? "PRINT" : "ALERT", output.Text)); }
+        catch (OperationCanceledException) { ending = "已停止"; throw; }
+        catch { ending = "执行失败"; throw; }
         finally
         {
+            AppendScriptOutput("结束", ending);
             _executionPositionTimer.Stop();
             _executingSource = null;
             _executionTracker = null;

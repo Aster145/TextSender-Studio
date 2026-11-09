@@ -31,24 +31,18 @@
        <Border Style="{StaticResource Panel}" Margin="0,0,0,16"><StackPanel><WrapPanel><TextBlock Text="项目资源" Style="{StaticResource Caption}" Margin="0,0,12,0"/><WrapPanel x:Name="ShortcutsPanel"/><Button Content="启动脚本" Click="ManageShortcutsClick" Style="{StaticResource QuietButton}"/><Button Content="声音提醒" Click="ManageSoundsClick" Style="{StaticResource QuietButton}"/></WrapPanel></StackPanel></Border>
        <local:SyntaxHelpView x:Name="ScriptSyntaxHelp" Editor="{Binding ElementName=ScriptEditor}" Margin="0,0,0,12"/>
        <DockPanel Margin="0,0,0,12">
-        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><Button Content="加载脚本" Click="LoadScriptClick"/><Button Content="保存" Click="SaveScriptClick"/><Button x:Name="RunButton" Content="运行脚本" Style="{StaticResource PrimaryButton}" Click="RunClick"/><Button x:Name="StopButton" Content="停止" IsEnabled="False" Click="StopClick"/></StackPanel>
-        <WrapPanel><Button Content="插入函数" Click="InsertFunctionClick"/><CheckBox x:Name="ShowExecutionPositionCheck" Content="显示执行位置" Style="{StaticResource Switch}" Margin="8,0,0,0" IsChecked="False" Checked="ExecutionPositionChanged" Unchecked="ExecutionPositionChanged" ToolTip="在编辑区高亮正在执行的行，每秒最多刷新 10 次；可以在运行中开关。"/></WrapPanel>
+        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><Button x:Name="LoadScriptButton" Content="加载脚本" Click="LoadScriptClick"/><Button x:Name="SaveScriptButton" Content="保存" Click="SaveScriptClick"/><Button x:Name="RunButton" Content="运行脚本" Style="{StaticResource PrimaryButton}" Click="RunClick"/><Button x:Name="StopButton" Content="停止" IsEnabled="False" Click="StopClick"/></StackPanel>
+        <WrapPanel><Button x:Name="InsertFunctionButton" Content="插入函数" Click="InsertFunctionClick"/><CheckBox x:Name="ShowExecutionPositionCheck" Content="显示执行位置" Style="{StaticResource Switch}" Margin="8,0,0,0" IsChecked="False" Checked="ExecutionPositionChanged" Unchecked="ExecutionPositionChanged" ToolTip="在编辑区高亮正在执行的行，每秒最多刷新 10 次；可以在运行中开关。"/></WrapPanel>
        </DockPanel>
+       <WrapPanel Margin="0,0,0,12"><CheckBox x:Name="MainScriptEditToggle" Content="允许编辑" Style="{StaticResource Switch}" IsChecked="False" Checked="ScriptEditChanged" Unchecked="ScriptEditChanged" Margin="0,0,16,0"/><Button x:Name="CommentScriptButton" Content="批量注释" Click="CommentScriptClick" ToolTip="选中多行后点击；Ctrl+/ 切换注释"/><Button x:Name="UncommentScriptButton" Content="取消注释" Click="UncommentScriptClick" ToolTip="Ctrl+Shift+/ 取消选中行的注释"/></WrapPanel>
        <Grid>
         <Grid.ColumnDefinitions><ColumnDefinition Width="3*" MinWidth="400"/><ColumnDefinition Width="16"/><ColumnDefinition Width="2*" MinWidth="340"/></Grid.ColumnDefinitions>
-        <Border Style="{StaticResource Panel}"><DockPanel><DockPanel DockPanel.Dock="Top" Margin="0,0,0,12"><TextBlock x:Name="SaveState" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><StackPanel><TextBlock x:Name="ScriptFileName" Text="main.ecs" FontWeight="SemiBold"/><TextBlock x:Name="ExecutionPositionStatus" Style="{StaticResource Caption}" Visibility="Collapsed" Margin="0,4,0,0"/></StackPanel></DockPanel><DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0"><TextBlock x:Name="EditorCaretStatus" Text="行 1 · 列 1" Style="{StaticResource Caption}" DockPanel.Dock="Right"/><TextBlock Text="Ctrl+S 保存 · Ctrl+Space 补全 · 双击函数跳转" FontSize="11" Foreground="{DynamicResource MutedBrush}"/></DockPanel><Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource PanelBrush}" Padding="0,8"><local:ScriptEditorBox x:Name="ScriptEditor" FontFamily="Consolas, Microsoft YaHei UI" FontSize="14" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Height="460" TextChanged="ScriptChanged" Background="Transparent" Foreground="{DynamicResource TextBrush}"/></Border></DockPanel></Border>
-        <Border Grid.Column="2" Style="{StaticResource Panel}"><StackPanel>
-         <TextBlock Text="画面与识图" Style="{StaticResource SectionTitle}"/>
-         <WrapPanel Margin="0,0,0,12"><ComboBox x:Name="CaptureSource" Width="175" SelectionChanged="CaptureSourceChanged"><ComboBoxItem Content="桌面 / 屏幕选区" Tag="Desktop" IsSelected="True"/><ComboBoxItem Content="采集卡 / 摄像头" Tag="Camera"/></ComboBox><ComboBox x:Name="CameraPicker" Width="160" DisplayMemberPath="Name" SelectedValuePath="Index" Visibility="Collapsed"/><Button Content="刷新设备" Click="RefreshCamerasClick"/><Button x:Name="CaptureButton" Content="开始预览" Click="CaptureClick"/></WrapPanel>
-         <WrapPanel Margin="0,0,0,12"><Button x:Name="DesktopRegionButton" Content="屏幕采集范围" Click="DesktopRegionClick"/><Button x:Name="SelectRegionButton" Content="框选识图区域" Click="SelectRegionClick"/></WrapPanel>
-         <local:ImageRegionView x:Name="CaptureView" Height="200" RegionChanged="RecognitionRegionChanged"/>
-         <TextBlock x:Name="CaptureStatus" Text="点击“开始预览”获取真实画面。" Style="{StaticResource Caption}" Margin="0,8,0,16"/>
-         <TextBlock Text="识图区域" FontWeight="SemiBold" Margin="0,0,0,8"/>
-         <WrapPanel Margin="0,0,0,8"><RadioButton x:Name="FullRegion" Content="全画面" GroupName="Region" IsChecked="True" Margin="0,0,16,0" Checked="RegionModeChanged"/><RadioButton x:Name="CustomRegion" Content="指定区域" GroupName="Region" Checked="RegionModeChanged"/></WrapPanel>
-         <UniformGrid Columns="4"><StackPanel Margin="0,0,8,0"><TextBlock Text="X（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiX" Text="0" LostFocus="RoiFieldsChanged"/></StackPanel><StackPanel Margin="0,0,8,0"><TextBlock Text="Y（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiY" Text="0" LostFocus="RoiFieldsChanged"/></StackPanel><StackPanel Margin="0,0,8,0"><TextBlock Text="宽（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiW" Text="1920" LostFocus="RoiFieldsChanged"/></StackPanel><StackPanel><TextBlock Text="高（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiH" Text="1080" LostFocus="RoiFieldsChanged"/></StackPanel></UniformGrid>
-         <TextBlock x:Name="RegionStatus" Style="{StaticResource Caption}" Margin="0,8,0,12"/>
-         <Button x:Name="NewImageLabelButton" Content="＋ 制作图像标签" HorizontalAlignment="Right" Click="NewLabelClick"/>
-        </StackPanel></Border>
+        <Border Style="{StaticResource Panel}"><DockPanel><DockPanel DockPanel.Dock="Top" Margin="0,0,0,12"><TextBlock x:Name="SaveState" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><StackPanel><TextBlock x:Name="ScriptFileName" Text="main.ecs" FontWeight="SemiBold"/><TextBlock x:Name="ExecutionPositionStatus" Style="{StaticResource Caption}" Visibility="Collapsed" Margin="0,4,0,0"/></StackPanel></DockPanel><DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0"><TextBlock x:Name="EditorCaretStatus" Text="行 1 · 列 1" Style="{StaticResource Caption}" DockPanel.Dock="Right"/><TextBlock Text="Ctrl+S 保存 · Ctrl+/ 注释 · 双击函数跳转" FontSize="11" Foreground="{DynamicResource MutedBrush}"/></DockPanel><Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource PanelBrush}" Padding="0,8"><local:ScriptEditorBox x:Name="ScriptEditor" FontFamily="Consolas, Microsoft YaHei UI" FontSize="14" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Height="460" TextChanged="ScriptChanged" Background="Transparent" Foreground="{DynamicResource TextBrush}"/></Border></DockPanel></Border>
+        <Border Grid.Column="2" Style="{StaticResource Panel}"><DockPanel>
+         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12"><Button DockPanel.Dock="Right" Content="清空" Click="ClearScriptOutputClick" Style="{StaticResource QuietButton}" Margin="0"/><StackPanel><TextBlock Text="脚本输出" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="开始 / 结束 · PRINT · ALERT" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></DockPanel>
+         <TextBlock DockPanel.Dock="Bottom" Text="设备通信与错误详情可在「设置 → 执行日志」查看。" Style="{StaticResource Caption}" Margin="0,12,0,0"/>
+         <TextBox x:Name="ScriptOutputBox" Style="{StaticResource ConsoleLog}" Height="460"/>
+        </DockPanel></Border>
        </Grid>
        <!-- Refactoring UI §2.1 / §3.6: primary script action stays above; manual pad groups are secondary.
             Existing Panel/Page/Line/Text brushes, 4/8/16/24 spacing and 14/16 type keep the hierarchy consistent. -->
@@ -91,7 +85,6 @@
          <WrapPanel Margin="0,16,0,0"><TextBlock Text="键盘与文字" Style="{StaticResource Caption}" Margin="0,0,16,0"/><TextBox x:Name="ManualText" Width="320"/><Button Content="发送文字" Click="ManualTextClick" Margin="8,0,16,0"/><Button Content="Enter" Tag="ENTER" Click="ManualKeyClick"/><Button Content="Esc" Tag="ESC" Click="ManualKeyClick"/></WrapPanel>
         </StackPanel>
        </Border>
-       <Border Style="{StaticResource Panel}" Margin="0,16,0,0"><DockPanel><TextBlock Text="执行日志" Style="{StaticResource SectionTitle}" DockPanel.Dock="Top"/><TextBox x:Name="LogBox" FontFamily="Consolas, Microsoft YaHei UI" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Height="130" VerticalScrollBarVisibility="Auto" BorderThickness="0"/></DockPanel></Border>
       </StackPanel>
      </ScrollViewer>
     </TabItem>
@@ -106,22 +99,36 @@
      </DockPanel>
     </TabItem>
     <TabItem Header="图像标签" x:Name="ImageLabelsTab"><TabItem.Resources><SolidColorBrush x:Key="AccentBrush" Color="#0F766E"/><SolidColorBrush x:Key="SoftBrush" Color="#DEF7F1"/></TabItem.Resources>
-     <DockPanel x:Name="ImageLabelWorkspace" Margin="8,8,8,12">
-      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16"><WrapPanel DockPanel.Dock="Right"><Button Content="插入主脚本" Click="InsertLabelClick"/><Button Content="加载标签" Click="ImportLabelClick"/><Button Content="＋ 制作标签" Style="{StaticResource PrimaryButton}" Click="NewLabelClick" Margin="0"/></WrapPanel><StackPanel><TextBlock Text="图像标签" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="保存目标图片与识别区域，供脚本判断画面。" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></DockPanel>
-      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="224"/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
-       <Border Style="{StaticResource Panel}" Padding="8"><DockPanel><TextBlock DockPanel.Dock="Top" Text="当前项目的标签" Style="{StaticResource Caption}" Margin="8,8,8,12"/><ListBox x:Name="LabelsList" DisplayMemberPath="Name" SelectionChanged="LabelSelected"/></DockPanel></Border>
-       <Border Grid.Column="2" Style="{StaticResource Panel}"><Grid>
-        <DockPanel x:Name="LabelDetails">
-         <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0"><WrapPanel><Button Content="保存标签" Click="SaveLabelClick"/><Button Content="测试匹配" Click="TestLabelClick"/><Button Content="导出标签" Click="ExportLabelClick"/><Button Content="删除" Style="{StaticResource QuietButton}" Click="DeleteLabelClick"/></WrapPanel><TextBlock x:Name="LabelResult" Style="{StaticResource Caption}" Margin="0,8,0,0"/></StackPanel>
-         <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
-          <TextBlock Text="标签名称" Style="{StaticResource Caption}"/><TextBox x:Name="LabelName" Margin="0,4,0,16"/>
-          <Border Background="{DynamicResource PageBrush}" CornerRadius="8" Padding="16" Margin="0,0,0,16"><Image x:Name="LabelImage" Height="200" Stretch="Uniform"/></Border>
-          <WrapPanel><StackPanel Margin="0,0,24,0"><TextBlock Text="匹配阈值（%）" Style="{StaticResource Caption}"/><TextBox x:Name="LabelThreshold" Text="90" Width="100" HorizontalAlignment="Left" Margin="0,4,0,0"/></StackPanel><CheckBox x:Name="LabelGrayscale" Content="灰度模板匹配" VerticalAlignment="Bottom" Margin="0,0,0,8"/></WrapPanel>
-          <Border Background="{DynamicResource PageBrush}" CornerRadius="8" Padding="12" Margin="0,16,0,0"><StackPanel><TextBlock x:Name="LabelRegion" Text="搜索区域：全画面" Margin="0,0,0,8"/><Button Content="采用主标签识图区域" Click="AdoptLabelRegionClick" HorizontalAlignment="Left"/><TextBlock Text="在主标签预览画面上框选区域，再应用到此标签。" Style="{StaticResource Caption}" Margin="0,8,0,0"/></StackPanel></Border>
-         </StackPanel></ScrollViewer>
-        </DockPanel>
-        <TextBlock x:Name="LabelEmpty" Text="还没有图像标签&#x0a;&#x0a;先预览画面并框选目标，或加载已有标签与图片。" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="380" Foreground="{DynamicResource MutedBrush}"/>
-       </Grid></Border>
+     <DockPanel Margin="8,8,8,12">
+      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16"><WrapPanel x:Name="LabelActionsBar" DockPanel.Dock="Right"><Button Content="插入主脚本" Click="InsertLabelClick"/><Button Content="加载标签" Click="ImportLabelClick"/><Button Content="＋ 制作标签" Style="{StaticResource PrimaryButton}" Click="NewLabelClick" Margin="0"/></WrapPanel><StackPanel><TextBlock Text="图像标签" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="预览画面，圈选搜索范围与目标，测试后保存。" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></DockPanel>
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="5*" MinWidth="380"/><ColumnDefinition Width="16"/><ColumnDefinition Width="4*" MinWidth="340"/></Grid.ColumnDefinitions>
+       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">        <Border x:Name="CapturePanel" Style="{StaticResource Panel}"><StackPanel>
+         <TextBlock Text="画面与识图" Style="{StaticResource SectionTitle}"/>
+         <WrapPanel Margin="0,0,0,12"><ComboBox x:Name="CaptureSource" Width="175" SelectionChanged="CaptureSourceChanged"><ComboBoxItem Content="桌面 / 屏幕选区" Tag="Desktop" IsSelected="True"/><ComboBoxItem Content="采集卡 / 摄像头" Tag="Camera"/></ComboBox><ComboBox x:Name="CameraPicker" Width="160" DisplayMemberPath="Name" SelectedValuePath="Index" Visibility="Collapsed"/><Button Content="刷新设备" Click="RefreshCamerasClick"/><Button x:Name="CaptureButton" Content="开始预览" Click="CaptureClick"/></WrapPanel>
+         <WrapPanel Margin="0,0,0,12"><Button x:Name="DesktopRegionButton" Content="屏幕采集范围" Click="DesktopRegionClick"/><Button x:Name="SelectRegionButton" Content="框选识图区域" Click="SelectRegionClick"/></WrapPanel>
+         <local:ImageRegionView x:Name="CaptureView" Height="240" RegionChanged="RecognitionRegionChanged"/>
+         <TextBlock x:Name="CaptureStatus" Text="点击“开始预览”获取真实画面。" Style="{StaticResource Caption}" Margin="0,8,0,16"/>
+         <TextBlock Text="识图区域" FontWeight="SemiBold" Margin="0,0,0,8"/>
+         <WrapPanel Margin="0,0,0,8"><RadioButton x:Name="FullRegion" Content="全画面" GroupName="Region" IsChecked="True" Margin="0,0,16,0" Checked="RegionModeChanged"/><RadioButton x:Name="CustomRegion" Content="指定区域" GroupName="Region" Checked="RegionModeChanged"/></WrapPanel>
+         <UniformGrid Columns="4"><StackPanel Margin="0,0,8,0"><TextBlock Text="X（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiX" Text="0" LostFocus="RoiFieldsChanged"/></StackPanel><StackPanel Margin="0,0,8,0"><TextBlock Text="Y（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiY" Text="0" LostFocus="RoiFieldsChanged"/></StackPanel><StackPanel Margin="0,0,8,0"><TextBlock Text="宽（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiW" Text="1920" LostFocus="RoiFieldsChanged"/></StackPanel><StackPanel><TextBlock Text="高（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiH" Text="1080" LostFocus="RoiFieldsChanged"/></StackPanel></UniformGrid>
+         <TextBlock x:Name="RegionStatus" Style="{StaticResource Caption}" Margin="0,8,0,12"/>
+         <Button x:Name="NewImageLabelButton" Content="＋ 制作图像标签" HorizontalAlignment="Right" Click="NewLabelClick"/>
+        </StackPanel></Border></ScrollViewer>
+       <Border x:Name="ImageLabelWorkspace" Grid.Column="2" Style="{StaticResource Panel}"><DockPanel>
+        <StackPanel DockPanel.Dock="Top"><TextBlock Text="当前项目的标签" Style="{StaticResource Caption}" Margin="0,0,0,8"/><ListBox x:Name="LabelsList" DisplayMemberPath="Name" SelectionChanged="LabelSelected" Height="112" Margin="0,0,0,12"/></StackPanel>
+        <Grid>
+         <DockPanel x:Name="LabelDetails">
+          <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0"><WrapPanel><Button x:Name="EditLabelButton" Content="编辑标签" Click="EditLabelClick" Style="{StaticResource PrimaryButton}"/><Button Content="测试匹配" Click="TestLabelClick"/><Button Content="导出" Click="ExportLabelClick"/><Button Content="删除" Style="{StaticResource QuietButton}" Click="DeleteLabelClick"/></WrapPanel><TextBlock x:Name="LabelResult" Style="{StaticResource Caption}" Margin="0,8,0,0"/></StackPanel>
+          <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
+           <TextBlock Text="标签名称" Style="{StaticResource Caption}"/><TextBox x:Name="LabelName" IsReadOnly="True" Margin="0,4,0,12"/>
+           <Border Background="{DynamicResource PageBrush}" CornerRadius="8" Padding="12" Margin="0,0,0,12"><Image x:Name="LabelImage" Height="120" Stretch="Uniform"/></Border>
+           <WrapPanel><StackPanel Margin="0,0,16,0"><TextBlock Text="匹配阈值（%）" Style="{StaticResource Caption}"/><TextBox x:Name="LabelThreshold" IsReadOnly="True" Text="90" Width="100" Margin="0,4,0,0"/></StackPanel><CheckBox x:Name="LabelGrayscale" IsHitTestVisible="False" Focusable="False" Content="灰度匹配" VerticalAlignment="Bottom" Margin="0,0,0,8"/></WrapPanel>
+           <TextBlock x:Name="LabelRegion" Text="搜索区域：全画面" TextWrapping="Wrap" Margin="0,12,0,0"/>
+          </StackPanel></ScrollViewer>
+         </DockPanel>
+         <TextBlock x:Name="LabelEmpty" Text="还没有图像标签&#x0a;&#x0a;点击「制作标签」打开图片或截取预览画面，分别框选搜索范围与目标。" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="320" Foreground="{DynamicResource MutedBrush}"/>
+        </Grid>
+       </DockPanel></Border>
       </Grid>
      </DockPanel>
     </TabItem>

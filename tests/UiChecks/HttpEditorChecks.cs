@@ -77,8 +77,14 @@ internal static class HttpEditorChecks
         Check(store.Load(directory).HttpActions[0].Steps[0].Body.Contains("edited"), "closing edit mode saves bound request body");
         Click("AddHttpStepClick"); Click("DeleteHttpClick");
         Check(Steps().Count == 1 && list.Items.Count == 2, "locked handlers cannot modify rows or delete actions");
+        var scriptToggle = Control<CheckBox>("MainScriptEditToggle");
+        bool? scriptWasEditing = scriptToggle.IsChecked; scriptToggle.IsChecked = false;
+        string scriptBefore = Control<ScriptEditorBox>("ScriptEditor").Text;
         Click("InsertHttpClick");
+        Check(Control<ScriptEditorBox>("ScriptEditor").Text == scriptBefore, "main script lock blocks HTTP function insertion");
+        scriptToggle.IsChecked = true; Click("InsertHttpClick");
         Check(tab.SelectedIndex == 0 && Control<ScriptEditorBox>("ScriptEditor").Text.Contains("CALL robot_shortpress"), "locked action can still insert its script function");
+        scriptToggle.IsChecked = scriptWasEditing;
         tab.SelectedIndex = 3; toggle.IsChecked = true; Pump();
         list.SelectedItem = another; Pump(); Click("DeleteHttpClick");
         Check(list.Items.Count == 1 && list.SelectedIndex == 0, "delete action selects remaining item");

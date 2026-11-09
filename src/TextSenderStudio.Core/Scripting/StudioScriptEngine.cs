@@ -9,6 +9,9 @@ using EasyScript;
 
 namespace TextSenderStudio.Core.Scripting;
 
+public enum ScriptOutputKind { Print, Alert }
+public sealed record ScriptOutput(ScriptOutputKind Kind, string Text);
+
 /// <summary>Optional full controller state used by EasyCon DOWN/UP and stick instructions.</summary>
 public interface IStatefulScriptActions
 {
@@ -53,15 +56,15 @@ public sealed class StudioScriptEngine
         catch (StudioScriptException ex) { return [new(ex.Line, ex.Message, true)]; }
     }
 
-    public async Task RunAsync(string source, IScriptActions actions, CancellationToken token, ScriptExecutionTracker? tracker = null)
+    public async Task RunAsync(string source, IScriptActions actions, CancellationToken token, ScriptExecutionTracker? tracker = null, Action<ScriptOutput>? output = null)
     {
         ArgumentNullException.ThrowIfNull(actions);
         tracker?.Clear();
-        try { await RunCoreAsync(source, actions, token, tracker).ConfigureAwait(false); }
+        try { await RunCoreAsync(source, actions, token, tracker, output).ConfigureAwait(false); }
         finally { tracker?.Clear(); }
     }
 
-    private static Task RunCoreAsync(string source, IScriptActions actions, CancellationToken token, ScriptExecutionTracker? tracker)
+    private static Task RunCoreAsync(string source, IScriptActions actions, CancellationToken token, ScriptExecutionTracker? tracker, Action<ScriptOutput>? output)
     {
         // Compilation and execution both stay off the UI thread. No disk cache or external module loading.
         return Task.Run(async () =>
@@ -90,10 +93,11 @@ public sealed class StudioScriptEngine
                 StickSet = pad.SetStick,
                 StickClick = pad.TapStick,
                 ImgLabel = name => Match(actions, name, token),
-                Print = (text, _) => actions.Log(text),
+                Print = (text, _) => { output?.Invoke(new(ScriptOutputKind.Print, text)); actions.Log(text); },
                 Alert = text =>
                 {
                     token.ThrowIfCancellationRequested();
+                    output?.Invoke(new(ScriptOutputKind.Alert, text));
                     if (actions is IScriptNotificationActions notifications)
                         notifications.AlertAsync(text, token).GetAwaiter().GetResult();
                     else actions.Log(text);

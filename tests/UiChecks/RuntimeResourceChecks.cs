@@ -29,6 +29,8 @@ internal static class RuntimeResourceChecks
         var list = Control<ListBox>("HttpList");
         var grid = Control<DataGrid>("HttpSteps");
         var toggle = Control<CheckBox>("HttpEditToggle");
+        var scriptToggle = Control<CheckBox>("MainScriptEditToggle");
+        bool? scriptWasEditing = scriptToggle.IsChecked; scriptToggle.IsChecked = true;
         var previousTab = tabs.SelectedIndex;
         var previousAction = list.SelectedItem;
         var previousLabel = Control<ListBox>("LabelsList").SelectedItem;
@@ -58,6 +60,9 @@ internal static class RuntimeResourceChecks
                 {
                     check(!Control<FrameworkElement>("ImageLabelWorkspace").IsEnabled && !Control<Button>("NewImageLabelButton").IsEnabled,
                         "running operation locks image label editing: " + outcome);
+                    check(Control<ScriptEditorBox>("ScriptEditor").IsReadOnly && !scriptToggle.IsEnabled
+                        && !Control<Button>("CommentScriptButton").IsEnabled && !Control<Button>("RecordScriptButton").IsEnabled,
+                        "running operation locks main script editing and mutations: " + outcome);
                     check(!toggle.IsEnabled && !Control<FrameworkElement>("HttpDetails").IsEnabled && grid.IsReadOnly
                         && !Control<Button>("NewHttpButton").IsEnabled && !Control<Button>("SaveHttpButton").IsEnabled,
                         "running operation locks HTTP editing: " + outcome);
@@ -75,6 +80,8 @@ internal static class RuntimeResourceChecks
                         && Control<Button>("NewImageLabelButton").IsEnabled && toggle.IsEnabled && toggle.IsChecked == true
                         && Control<FrameworkElement>("HttpDetails").IsEnabled && !grid.IsReadOnly,
                         "operation end restores prior resource edit mode: " + outcome);
+                    check(!Control<ScriptEditorBox>("ScriptEditor").IsReadOnly && scriptToggle.IsEnabled && scriptToggle.IsChecked == true,
+                        "operation end restores prior main script edit mode: " + outcome);
                 }
                 finally
                 {
@@ -131,6 +138,7 @@ internal static class RuntimeResourceChecks
             store.Save(directory, project); Refresh();
             list.SelectedItem = previousAction; Control<ListBox>("LabelsList").SelectedItem = previousLabel;
             toggle.IsChecked = originallyEditing; tabs.SelectedIndex = previousTab;
+            scriptToggle.IsChecked = scriptWasEditing;
         }
     }
 

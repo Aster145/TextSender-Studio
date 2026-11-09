@@ -44,6 +44,9 @@ internal sealed class SettingsWindow : Window
 {
     public AppSettings Result { get; private set; }
     public SettingsWindow(Window owner, AppSettings source, Func<AppSettings, string, string, Task> configureWifi)
+        : this(owner, source, configureWifi, null, false) { }
+
+    public SettingsWindow(Window owner, AppSettings source, Func<AppSettings, string, string, Task> configureWifi, DiagnosticLogBuffer? diagnostics, bool logsOnly)
     {
         Style = (Style)Application.Current.FindResource(typeof(Window));
         Result = ProjectStore.Clone(source); Title = "设置"; Owner = owner; Width = 760; Height = 820; MinWidth = 620; MinHeight = 560; MaxHeight = SystemParameters.WorkArea.Height - 48; WindowStartupLocation = WindowStartupLocation.CenterOwner; ShowInTaskbar = false; Topmost = owner.Topmost;
@@ -57,7 +60,21 @@ internal sealed class SettingsWindow : Window
         footer.SetResourceReference(Border.BackgroundProperty, "PanelBrush"); footer.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
         var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right }; footer.Child = actions;
         DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
-        var panel = new StackPanel { Margin = new(24, 0, 24, 8) }; root.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        var tabs = new TabControl { Margin = new(16, 0, 16, 8) }; root.Children.Add(tabs);
+        var panel = new StackPanel { Margin = new(8, 8, 8, 0) };
+        var general = new TabItem { Header = "常规设置", IsEnabled = !logsOnly, Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled } };
+        tabs.Items.Add(general);
+        var logPanel = new DockPanel { Margin = new(8) };
+        var logTools = new DockPanel { Margin = new(0, 0, 0, 12) }; DockPanel.SetDock(logTools, Dock.Top); logPanel.Children.Add(logTools);
+        var logButtons = new WrapPanel(); DockPanel.SetDock(logButtons, Dock.Right); logTools.Children.Add(logButtons);
+        var buffer = diagnostics ?? new DiagnosticLogBuffer();
+        Dialogs.Button(logButtons, "复制日志", () => { if (buffer.Text.Length > 0) Clipboard.SetText(buffer.Text); });
+        Dialogs.Button(logButtons, "清空日志", buffer.Clear);
+        logTools.Children.Add(new TextBlock { Text = logsOnly ? "运行中 · 可实时查看日志，设置暂时锁定" : "设备通信、执行详情与错误信息", Style = (Style)Application.Current.FindResource("Caption") });
+        var logBox = new TextBox { Name = "DiagnosticLogBox", Style = (Style)Application.Current.FindResource("ConsoleLog"), Text = buffer.Text }; logPanel.Children.Add(logBox);
+        void RefreshLog() { logBox.Text = buffer.Text; logBox.ScrollToEnd(); }
+        buffer.Changed += RefreshLog; Closed += (_, _) => buffer.Changed -= RefreshLog;
+        tabs.Items.Add(new TabItem { Header = "执行日志", Content = logPanel }); tabs.SelectedIndex = logsOnly ? 1 : 0;
         var appearance = Section(panel, "界面", "手动控制开关位于主标签；窗口置顶也可在顶部直接切换。");
         var onTop = new CheckBox { Content = "默认窗口置顶", IsChecked = source.AlwaysOnTop, Margin = new(0, 8, 0, 0) }; appearance.Children.Add(onTop);
         var espSection = Section(panel, "ESP32-S3", "填写开发板连接路由器后获得的局域网地址。");
@@ -75,7 +92,7 @@ internal sealed class SettingsWindow : Window
             catch (Exception error) { Dialogs.Error(this, error); }
             finally { password.Clear(); wifiButton.IsEnabled = true; }
         };
-        var robotSection = Section(panel, "默认 HTTP 设备", "动作未填写默认地址时使用此设备。每个动作和步骤均可指定其他设备。");
+        var robotSection = Section(panel, "默认 HTTP 设备", "相对路径使用此设备；在步骤中直接填写完整 URL 可控制其他设备。");
         var (robot, robotPort) = AddressFields(robotSection, "默认 HTTP 设备 · IP / 主机名", source.RobotHost, "HTTP 默认端口", source.RobotPort.ToString());
         var networkOptions = new Grid(); networkOptions.ColumnDefinitions.Add(new()); networkOptions.ColumnDefinitions.Add(new() { Width = new GridLength(16) }); networkOptions.ColumnDefinitions.Add(new()); robotSection.Children.Add(networkOptions);
         var protocolFields = new StackPanel(); networkOptions.Children.Add(protocolFields);
@@ -99,12 +116,13 @@ internal sealed class SettingsWindow : Window
         var lanPort = Dialogs.Field(lanFields, "本机接口端口", source.LanPort.ToString()); lanPort.Width = 160; lanPort.HorizontalAlignment = HorizontalAlignment.Left; lanPort.Margin = new(0);
         var lanCard = new Border { Style = (Style)Application.Current.FindResource("Panel"), Margin = new(0, 0, 0, 16), Child = new Expander { Header = "本机局域网接口", Content = lanFields } }; panel.Children.Add(lanCard);
         panel.Children.Add(new TextBlock { Text = "设置保存在程序目录；Wi-Fi 密码仅写入开发板。", Style = (Style)Application.Current.FindResource("Caption"), Margin = new(0, 0, 0, 16) });
-        var cancel = Dialogs.Button(actions, "取消", () => DialogResult = false); cancel.IsCancel = true;
-        Dialogs.Button(actions, "保存设置", () =>
+        var cancel = Dialogs.Button(actions, logsOnly ? "关闭" : "取消", () => DialogResult = false); cancel.IsCancel = true;
+        var save = Dialogs.Button(actions, "保存设置", () =>
         {
             try { Result.AlwaysOnTop = onTop.IsChecked == true; Result.EspHost = esp.Text.Trim(); Result.EspPort = int.Parse(espPort.Text); Result.RobotHost = robot.Text.Trim(); Result.RobotPort = int.Parse(robotPort.Text); Result.RobotScheme = (string)protocol.SelectedItem; Result.RequestTimeoutMs = int.Parse(timeout.Text); Result.LanEnabled = lan.IsChecked == true; Result.LanPort = int.Parse(lanPort.Text); Result.LanBindAddress = (string)address.SelectedItem; ProjectStore.ValidateSettings(Result); DialogResult = true; }
             catch (Exception error) { Dialogs.Error(this, error); }
         }, true);
+        save.IsEnabled = !logsOnly;
     }
 
     private static StackPanel Section(Panel parent, string title, string description)

@@ -11,6 +11,8 @@ internal static class SaveShortcutChecks
     public static void Run(MainWindow main, ProjectStore store, Action<bool, string> check)
     {
         var editor = (ScriptEditorBox)main.FindName("ScriptEditor");
+        var editToggle = (CheckBox)main.FindName("MainScriptEditToggle");
+        bool? wasEditing = editToggle.IsChecked; editToggle.IsChecked = true;
         var tabs = (TabControl)main.FindName("MainTabs");
         var textEditor = (TextBox)main.FindName("TextSendEditor");
         var directory = (string)typeof(MainWindow).GetField("_directory", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(main)!;
@@ -38,6 +40,12 @@ internal static class SaveShortcutChecks
             ApplicationCommands.Save.Execute(null, editor);
             check(editor.Foldings.Single().IsFolded && File.ReadAllText(store.Resolve(directory, project.MainScript)) == formatted,
                 "saving a folded block writes its complete body without expanding or dropping source");
+            editor.Text = input; editToggle.IsChecked = false;
+            ApplicationCommands.Save.Execute(null, editor);
+            check(editor.Text == input && File.ReadAllText(store.Resolve(directory, project.MainScript)) == input
+                && ((TextBlock)main.FindName("SaveState")).Text == "已保存",
+                "locked script can save existing edits without formatting or changing the document");
+            editToggle.IsChecked = true; ApplicationCommands.Save.Execute(null, editor);
             tabs.SelectedIndex = 1;
             const string raw = "    FOR\nNEXT\n";
             textEditor.Text = raw;
@@ -53,8 +61,10 @@ internal static class SaveShortcutChecks
         }
         finally
         {
+            editToggle.IsChecked = true;
             tabs.SelectedIndex = 0; editor.Text = original; textEditor.Text = originalText;
             save.Invoke(main, [main, new RoutedEventArgs()]);
+            editToggle.IsChecked = wasEditing;
         }
     }
 }

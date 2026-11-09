@@ -7,6 +7,8 @@ internal static class ExecutionMarkerChecks
     public static void Run(MainWindow main, Action<bool, string> check)
     {
         var editor = (ScriptEditorBox)main.FindName("ScriptEditor");
+        var editToggle = (CheckBox)main.FindName("MainScriptEditToggle");
+        bool? wasEditing = editToggle.IsChecked; editToggle.IsChecked = true;
         ((TabControl)main.FindName("MainTabs")).SelectedIndex = 0;
         string before = editor.Text;
         try
@@ -55,6 +57,7 @@ internal static class ExecutionMarkerChecks
         {
             editor.ClearExecutionLine(); editor.ScriptMode = true; editor.Text = before;
             editor.CaretIndex = 0; editor.ScrollToHome(); editor.CloseCompletion();
+            editToggle.IsChecked = wasEditing;
         }
     }
 

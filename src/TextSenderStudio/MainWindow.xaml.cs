@@ -38,7 +38,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         _store = new(App.DataRoot); _settings = _store.LoadSettings(); ProjectStore.ValidateSettings(_settings);
-        InitializeComponent(); InitializeScriptEditor(); InitializeExecutionPosition(); _bridge = CreateBridge();
+        InitializeComponent(); InitializeScriptEditing(); InitializeScriptEditor(); InitializeExecutionPosition(); _bridge = CreateBridge();
         TransportPicker.SelectionChanged += (_, _) => { if (_initializing) return; SerialPicker.Visibility = TransportPicker.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed; };
         _capture.FrameReady += frame =>
         {
@@ -57,7 +57,7 @@ public partial class MainWindow : Window
     private void Log(string message)
     {
         if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(() => Log(message)); return; }
-        LogBox.AppendText($"{DateTime.Now:HH:mm:ss}  {message}\n"); if (LogBox.Text.Length > 24000) LogBox.Text = LogBox.Text[^16000..]; LogBox.ScrollToEnd();
+        _diagnosticLog.Append(message);
     }
     private void ApplySettings()
     {
@@ -90,7 +90,7 @@ public partial class MainWindow : Window
         {
             _project = _store.Load(directory); _directory = directory; _settings.LastProject = directory; _store.SaveSettings(_settings);
             _scriptBuffer = ReadFile(_store.Resolve(directory, _project.MainScript)); _textBuffer = ReadFile(_store.Resolve(directory, "draft.txt"));
-            ScriptEditor.Text = _scriptBuffer; TextSendEditor.Text = _textBuffer; ScriptFileName.Text = _project.MainScript; SaveState.Text = TextSaveState.Text = "已载入";
+            ScriptEditor.Text = _scriptBuffer; TextSendEditor.Text = _textBuffer; ScriptFileName.Text = _project.MainScript; MarkDocumentsLoaded(_scriptBuffer, _textBuffer);
             ProjectLocation.Text = "项目位置：程序目录 / projects/" + directory; ProjectLocation.ToolTip = _store.ProjectPath(directory); MainTabs.Visibility = Visibility.Visible; EmptyState.Visibility = Visibility.Collapsed;
             CaptureSource.SelectedIndex = _project.Capture.Source == "Camera" ? 1 : 0; UpdateCaptureSourceUi(); RefreshResources(); SyncRegion();
         }
@@ -103,7 +103,7 @@ public partial class MainWindow : Window
         _scriptBuffer = ScriptEditor.Text; _textBuffer = TextSendEditor.Text;
         File.WriteAllText(_store.Resolve(_directory, _project.MainScript), _scriptBuffer, new UTF8Encoding(false));
         File.WriteAllText(_store.Resolve(_directory, "draft.txt"), _textBuffer, new UTF8Encoding(false));
-        _store.Save(_directory, _project); SaveState.Text = TextSaveState.Text = "已保存";
+        _store.Save(_directory, _project); MarkDocumentsSaved(_scriptBuffer, _textBuffer);
     }
     private void RefreshResources()
     {
@@ -144,8 +144,8 @@ public partial class MainWindow : Window
     private void OpenProjectFolderClick(object sender, RoutedEventArgs e) { if (_project != null) Process.Start(new ProcessStartInfo(_store.ProjectPath(_directory)) { UseShellExecute = true }); }
     private async void SettingsClick(object sender, RoutedEventArgs e)
     {
-        if (_operation != null) { Log("请先停止正在执行的操作。"); return; }
-        var dialog = new SettingsWindow(this, _settings, async (config, ssid, password) => { await using var bridge = new InputBridge(config); await bridge.ConfigureWifiAsync(ssid, password, CancellationToken.None); });
+        var busy = _operation != null;
+        var dialog = new SettingsWindow(this, _settings, async (config, ssid, password) => { await using var bridge = new InputBridge(config); await bridge.ConfigureWifiAsync(ssid, password, CancellationToken.None); }, _diagnosticLog, busy);
         if (dialog.ShowDialog() != true) return;
         try { _store.SaveSettings(dialog.Result); _settings = dialog.Result; ApplySettings(); await ReplaceBridge(); StartLan(); } catch (Exception error) { Dialogs.Error(this, error); }
     }
@@ -168,7 +168,7 @@ public partial class MainWindow : Window
     }, Log, (sound, token) => SoundPlayback.PlayAsync(sound, _store.ProjectPath(_directory), token));
     private async Task RunOperation(Func<CancellationToken, Task> work, bool releaseInput = false)
     {
-        if (_operation != null) { Log("已有操作正在执行，请先停止。"); return; }
+        if (_operation != null || _labelEditorOpen) { Log("已有操作或标签编辑正在进行，请先结束。"); return; }
         using var cancellation = new CancellationTokenSource(); _operation = cancellation; _operationFinished = new(TaskCreationOptions.RunContinuationsAsynchronously); ProjectBar.IsEnabled = false; RunButton.IsEnabled = false; StopButton.IsEnabled = true; RunStatus.Text = "执行中";
         UpdateResourceEditingState();
         try { await work(cancellation.Token); RunStatus.Text = "已完成"; }
@@ -184,6 +184,8 @@ public partial class MainWindow : Window
     }
     private void UpdateResourceEditingState()
     {
+        UpdateScriptEditingState();
+        LabelActionsBar.IsEnabled = _operation == null;
         ImageLabelWorkspace.IsEnabled = _operation == null;
         NewImageLabelButton.IsEnabled = _operation == null;
         SendTextButton.IsEnabled = _operation == null;
@@ -202,18 +204,18 @@ public partial class MainWindow : Window
     }
     private void StopClick(object sender, RoutedEventArgs e) => _operation?.Cancel();
     private async void ReleaseClick(object sender, RoutedEventArgs e) { _operation?.Cancel(); try { await _bridge.ReleaseAllAsync(CancellationToken.None); Log("已释放输入。"); } catch (Exception error) { Log(error.Message); } }
-    private void ScriptChanged(object? sender, EventArgs e) { if (_initializing) return; SaveState.Text = "未保存"; }
+    private void ScriptChanged(object? sender, EventArgs e) { if (_initializing) return; UpdateDocumentSaveState(); }
     private void LoadScriptClick(object sender, RoutedEventArgs e)
     {
-        if (_project == null) return; var picker = new OpenFileDialog { Filter = "EasyCon 脚本|*.ecs|所有文件|*.*", InitialDirectory = _store.ProjectPath(_directory) };
+        if (!CanEditMainScript || _project == null) return; var picker = new OpenFileDialog { Filter = "EasyCon 脚本|*.ecs|所有文件|*.*", InitialDirectory = _store.ProjectPath(_directory) };
         if (picker.ShowDialog(this) != true) return;
         try { SaveProject(); if (Path.GetExtension(picker.FileName).Equals(".ecs", StringComparison.OrdinalIgnoreCase)) _project.MainScript = Path.GetFileName(picker.FileName); ScriptEditor.Text = File.ReadAllText(picker.FileName, Encoding.UTF8); ScriptFileName.Text = _project.MainScript; SaveProject(); } catch (Exception error) { Dialogs.Error(this, error); }
     }
-    private void SaveScriptClick(object sender, RoutedEventArgs e) { try { ScriptEditor.FormatIndentation(); SaveProject(); } catch (Exception error) { Dialogs.Error(this, error); } }
-    private void InsertCode(string text) { MainTabs.SelectedIndex = 0; ScriptEditor.AppendText("\n" + text + "\n"); ScriptEditor.Focus(); ScriptEditor.CaretIndex = ScriptEditor.Text.Length; }
+    private void SaveScriptClick(object sender, RoutedEventArgs e) { try { if (!ScriptEditor.IsReadOnly) ScriptEditor.FormatIndentation(); SaveProject(); } catch (Exception error) { Dialogs.Error(this, error); } }
+    private void InsertCode(string text) { if (!CanEditMainScript) { Log("请先打开主脚本的“允许编辑”开关。"); return; } MainTabs.SelectedIndex = 0; ScriptEditor.AppendText("\n" + text + "\n"); ScriptEditor.Focus(); ScriptEditor.CaretIndex = ScriptEditor.Text.Length; }
     private void InsertFunctionClick(object sender, RoutedEventArgs e)
     {
-        if (_project == null) return; var names = Actions(_project).FunctionNames;
+        if (!CanEditMainScript) return; var names = Actions(_project!).FunctionNames;
         if (names.Count == 0) { Log("请先添加短语、启动脚本、声音提醒或 HTTP 动作。"); return; }
         var dialog = Dialogs.Window(this, "插入函数"); var panel = new StackPanel { Margin = new(24) }; var list = new ComboBox { ItemsSource = names, SelectedIndex = 0, Margin = new(0, 0, 0, 20) }; panel.Children.Add(list); var actions = new WrapPanel(); panel.Children.Add(actions); Dialogs.Button(actions, "取消", () => dialog.DialogResult = false); Dialogs.Button(actions, "插入", () => dialog.DialogResult = true, true); dialog.Content = panel;
         if (dialog.ShowDialog() == true) InsertCode("CALL " + list.SelectedItem);
@@ -287,53 +289,6 @@ public partial class MainWindow : Window
         if (_initializing || _project == null || FullRegion.IsChecked == true) return;
         try { var r = new PixelRegion { X = int.Parse(RoiX.Text), Y = int.Parse(RoiY.Text), Width = int.Parse(RoiW.Text), Height = int.Parse(RoiH.Text) }; if (r.X < 0 || r.Y < 0 || r.Width < 1 || r.Height < 1 || (long)r.X + r.Width > (_frame?.Width ?? 1920) || (long)r.Y + r.Height > (_frame?.Height ?? 1080)) throw new ArgumentException("识图区域须位于画面边界内。"); _project.Capture.RecognitionRegion = r; _store.Save(_directory, _project); SyncRegion(); } catch (Exception error) { RegionStatus.Text = error.Message; }
     }
-    private void NewLabelClick(object sender, RoutedEventArgs e)
-    {
-        if (_project == null || _operation != null) return; var frame = _capture.GetLatestFrame(); if (frame == null) { MessageBox.Show(this, "请先开始画面预览。", "制作标签"); return; }
-        var region = Dialogs.PickRegion(this, frame); if (region == null) return; var name = Dialogs.Prompt(this, "制作标签", "标签名称", "新标签"); if (string.IsNullOrWhiteSpace(name)) return;
-        try { if (_project.Labels.Any(l => l.Name == name)) throw new ArgumentException("标签名称已经存在。"); var label = new ImageLabel { Name = name, ImagePath = "labels/" + Guid.NewGuid().ToString("N") + ".png", SearchRegion = _project.Capture.RecognitionRegion == null ? null : ProjectStore.Clone(_project.Capture.RecognitionRegion) }; ImageTools.Save(ImageTools.Crop(frame, region), _store.Resolve(_directory, label.ImagePath)); _project.Labels.Add(label); _store.Save(_directory, _project); RefreshResources(); MainTabs.SelectedItem = ImageLabelsTab; LabelsList.SelectedItem = label; } catch (Exception error) { Dialogs.Error(this, error); }
-    }
-    private void LabelSelected(object sender, SelectionChangedEventArgs e)
-    {
-        _selectedLabel = LabelsList.SelectedItem as ImageLabel; LabelDetails.Visibility = _selectedLabel == null ? Visibility.Collapsed : Visibility.Visible; if (_selectedLabel == null) return;
-        LabelName.Text = _selectedLabel.Name; LabelThreshold.Text = (_selectedLabel.Threshold * 100).ToString("0.##"); LabelGrayscale.IsChecked = _selectedLabel.Grayscale; LabelRegion.Text = "搜索区域：" + (_selectedLabel.SearchRegion?.ToString() ?? "全画面");
-        try { LabelImage.Source = ImageRegionView.Bitmap(ImageTools.Load(_store.Resolve(_directory, _selectedLabel.ImagePath)).Png); } catch (Exception error) { LabelImage.Source = null; LabelResult.Text = error.Message; }
-    }
-    private void SaveLabel()
-    {
-        if (_project == null || _selectedLabel == null || _operation != null) return; var name = LabelName.Text.Trim(); if (name.Length == 0 || _project.Labels.Any(l => l != _selectedLabel && l.Name == name)) throw new ArgumentException("标签名不能为空或重复。");
-        if (!double.TryParse(LabelThreshold.Text, out var threshold) || threshold < 0 || threshold > 100) throw new ArgumentException("阈值范围为 0–100。");
-        _selectedLabel.Name = name; _selectedLabel.Threshold = threshold / 100; _selectedLabel.Grayscale = LabelGrayscale.IsChecked == true; _store.Save(_directory, _project); LabelsList.Items.Refresh(); LabelResult.Text = "标签已保存。";
-    }
-    private void SaveLabelClick(object sender, RoutedEventArgs e) { try { SaveLabel(); } catch (Exception error) { Dialogs.Error(this, error); } }
-    private void AdoptLabelRegionClick(object sender, RoutedEventArgs e) { if (_selectedLabel == null || _project == null || _operation != null) return; _selectedLabel.SearchRegion = _project.Capture.RecognitionRegion == null ? null : ProjectStore.Clone(_project.Capture.RecognitionRegion); _store.Save(_directory, _project); LabelRegion.Text = "搜索区域：" + (_selectedLabel.SearchRegion?.ToString() ?? "全画面"); }
-    private async void TestLabelClick(object sender, RoutedEventArgs e)
-    {
-        if (_selectedLabel == null) return;
-        try { SaveLabel(); var frame = _capture.GetLatestFrame() ?? throw new InvalidOperationException("请先开始画面预览。"); var template = ImageTools.Load(_store.Resolve(_directory, _selectedLabel.ImagePath)); var label = ProjectStore.Clone(_selectedLabel); var result = await Task.Run(() => TemplateMatcher.Match(frame, template, label)); LabelResult.Text = $"匹配度 {result.Score * 100:F1}% · {(result.IsMatch ? "达到阈值" : "未达到阈值")} · {result.Bounds}"; } catch (Exception error) { LabelResult.Text = error.Message; }
-    }
-    private void InsertLabelClick(object sender, RoutedEventArgs e) { if (_selectedLabel != null) InsertCode("$score = @" + _selectedLabel.Name); }
-    private void DeleteLabelClick(object sender, RoutedEventArgs e) { if (_project == null || _selectedLabel == null || _operation != null) return; _project.Labels.Remove(_selectedLabel); _store.Save(_directory, _project); RefreshResources(); }
-    private sealed record LabelBundle(ImageLabel Label, string PngBase64);
-    private void ExportLabelClick(object sender, RoutedEventArgs e)
-    {
-        if (_selectedLabel == null) return; var picker = new SaveFileDialog { Filter = "TextSender 图像标签|*.tslabel", FileName = _selectedLabel.Name + ".tslabel" }; if (picker.ShowDialog(this) != true) return;
-        try { SaveLabel(); ProjectStore.Write(picker.FileName, new LabelBundle(ProjectStore.Clone(_selectedLabel), Convert.ToBase64String(File.ReadAllBytes(_store.Resolve(_directory, _selectedLabel.ImagePath))))); } catch (Exception error) { Dialogs.Error(this, error); }
-    }
-    private void ImportLabelClick(object sender, RoutedEventArgs e)
-    {
-        if (_project == null || _operation != null) return; var picker = new OpenFileDialog { Filter = "TextSender 图像标签 / 图片|*.tslabel;*.png;*.jpg;*.bmp" }; if (picker.ShowDialog(this) != true) return;
-        try
-        {
-            ImageLabel label; FrameSnapshot image;
-            if (Path.GetExtension(picker.FileName).Equals(".tslabel", StringComparison.OrdinalIgnoreCase)) { var bundle = ProjectStore.Read<LabelBundle>(picker.FileName) ?? throw new IOException("标签文件无效。"); label = bundle.Label; var bytes = Convert.FromBase64String(bundle.PngBase64); var bitmap = ImageRegionView.Bitmap(bytes); image = new(bytes, bitmap.PixelWidth, bitmap.PixelHeight, DateTimeOffset.Now); }
-            else { label = new() { Name = Path.GetFileNameWithoutExtension(picker.FileName) }; image = ImageTools.Load(picker.FileName); }
-            if (_project.Labels.Any(l => l.Name == label.Name)) label.Name = Dialogs.Prompt(this, "同名标签", "输入新标签名", label.Name + "_2") ?? throw new OperationCanceledException();
-            if (string.IsNullOrWhiteSpace(label.Name) || _project.Labels.Any(l => l.Name == label.Name)) throw new ArgumentException("标签名称不能为空或重复。");
-            label.ImagePath = "labels/" + Guid.NewGuid().ToString("N") + ".png"; ImageTools.Save(image, _store.Resolve(_directory, label.ImagePath)); _project.Labels.Add(label); _store.Save(_directory, _project); RefreshResources(); LabelsList.SelectedItem = label;
-        }
-        catch (OperationCanceledException) { } catch (Exception error) { Dialogs.Error(this, error); }
-    }
     private void StartLan()
     {
         var generation = ++_lanGeneration; _lan?.Dispose(); _lan = null; if (!_settings.LanEnabled) return;
@@ -343,7 +298,7 @@ public partial class MainWindow : Window
             {
                 if (_closing || generation != _lanGeneration || !_settings.LanEnabled || _project == null) return new LanControlResponse(409, new { error = "没有活动项目或接口已关闭。" });
                 if (route == "items") return new LanControlResponse(200, new { project = _directory, phrases = _project.Phrases.Select(p => p.Name).ToArray(), scripts = _project.Shortcuts.Select(s => s.Name).ToArray() });
-                if (_operation != null) return new LanControlResponse(409, new { error = "正在执行其他操作。" });
+                if (_operation != null || _labelEditorOpen) return new LanControlResponse(409, new { error = "正在执行其他操作或编辑标签。" });
                 if (!string.IsNullOrEmpty(request.Project) && request.Project != _directory) return new LanControlResponse(409, new { error = "指定项目不是当前项目。" });
                 var function = request.Kind == "phrase" ? _project.Phrases.FirstOrDefault(p => p.Name == request.Name)?.FunctionName : _project.Shortcuts.FirstOrDefault(s => s.Name == request.Name)?.FunctionName;
                 if (function == null) return new LanControlResponse(404, new { error = "没有同名配置动作。" });
