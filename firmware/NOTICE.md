@@ -4,7 +4,10 @@
 
 | 文件 | 当前来源 | 许可与保留声明 |
 | --- | --- | --- |
-| `TextSenderBridge/TextSenderBridge.ino` | 本项目新实现：HTTP 表单接口、Wi-Fi/NVS、任务状态机、输入租期及独立 USB 工作任务 | MIT，见本目录 `LICENSE` |
+| `TextSenderBridge/TextSenderBridge.ino` | 本项目新实现：HTTP 表单接口、任务状态机、输入租期及独立 USB 工作任务 | MIT，见本目录 `LICENSE` |
+| `TextSenderBridge/StudioWifi.h`、`StudioWifi.cpp` | 本项目新实现：Wi-Fi 配网、NVS 保存、启动重连、配网热点与 BOOT 重置 | MIT，见本目录 `LICENSE` |
+| `TextSenderBridge/StudioWifiTiming.h`、`tests/wifi_timing_checks.cpp` | 本项目新实现：可离线验证的配网时序与按键策略 | MIT，见本目录 `LICENSE` |
+| `TextSenderBridge/WifiPortalPage.h` | 本项目新实现的离线配网页面 | MIT，见本目录 `LICENSE` |
 | `TextSenderBridge/StudioInput.h` | 本项目新实现：USB 八字节报告结构、美式 ASCII 到标准 HID usage 的映射 | MIT，见本目录 `LICENSE` |
 | `TextSenderBridge/StudioUsb.h` | 本项目新实现的 USB 适配接口 | MIT，见本目录 `LICENSE` |
 | `TextSenderBridge/StudioUsb.cpp` | 本项目基于 Espressif 扩展接口与 TinyUSB 官方 HID 驱动请求/端点流程实现的双接口适配 | 本项目部分 MIT；TinyUSB 派生部分保留 Ha Thach 的 MIT，见 `TINYUSB-LICENSE.txt` |

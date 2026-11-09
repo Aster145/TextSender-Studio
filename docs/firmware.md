@@ -4,12 +4,20 @@
 
 ## 首次连接
 
-1. 刷入 `TextSenderBridge` 固件后连接热点 **TextSender-Setup**，密码 **TextSender32**。
-2. 在程序设置填写 ESP32 IP `192.168.4.1`、端口 `80`，点击首次 Wi-Fi 配网，填写路由器的 SSID/密码。也可以浏览器打开 `http://192.168.4.1` 完成配置。
-3. SSID/密码保存在板子 NVS，重新上电自动连接。`GET /status` 的 `station_ip` 为加入路由器后的地址；电脑切回同一 Wi-Fi 后，将程序中的 ESP32 IP 改为该地址。可在路由器设置 DHCP 地址保留。
+1. 固件 **0.1.1** 未配网时开启 **TextSender-Setup** 热点，**无需密码**。如果手机记住了旧版有密码的热点，请先忘记该网络，再重新连接。
+2. 连接热点后，支持网络登录检测的手机/电脑会提示打开配网页面；未出现提示时，手动打开 `http://192.168.4.1`。页面无需互联网，自动搜索附近的 **2.4 GHz Wi-Fi**，选择名称并填写密码即可。隐藏网络可展开手动填写名称。
+3. 保存后页面显示连接进度、失败原因或成功获得的 IP。成功后记下 IP，将电脑切回同一 Wi-Fi，在程序设置中填写该 ESP32 IP、端口 `80`。也可查看 `http://192.168.4.1/wifi/status` 或 `/status` 的 `station_ip`。可在路由器中设置 DHCP 地址保留。
 4. 原生 USB 枚举后有约 1 秒稳定等待。键盘与手柄是同时存在的两个 USB HID 接口，无需重新枚举切换。
 
-热点在路由器连接后仍保留，便于重新配置。控制接口按需求免令牌验证。Wi-Fi 密码仅提交给板子，不保存在程序配置或日志。
+已有配置时，重新上电会直接连接路由器，正常连接成功不开放配网热点。30 秒内未连上时开放热点供排查，并继续尝试重连。配网热点开启期间连接成功，会保留 120 秒供查看 IP，然后自动关闭；也可以在页面点击结束配网。系统是否自动弹出页面取决于其网络检测行为，手动 HTTP 入口始终可用于配网热点。
+
+Wi-Fi 配置保存在板子 NVS，使用一个记录整体写入，避免 Wi-Fi 名称与密码分开保存时出现不匹配；支持读取旧版 `tsstudio` 配置。控制接口按需求免令牌验证，Wi-Fi 密码不返回到网页、不写入程序配置或日志。
+
+## 更换 Wi-Fi / 清除配网
+
+板子正常启动后，先松开 **BOOT**，再持续按住 **BOOT 5 秒**，清除已保存的 Wi-Fi 并重新开放无密码配网热点。该操作只清除 Wi-Fi 配置，不擦除固件。**RESET/EN 只负责重启，长按不会清除配置。** 不要在按住 BOOT 时重新上电或按 RESET，那会进入下载模式。
+
+连接失败时，页面会显示状态与断开原因。确认路由器开启 2.4 GHz 网络；ESP32-S3 不支持连接仅 5 GHz 的网络。0.1.0 的热点一直开启，单凭看到旧热点不能判断是否连上路由器。
 
 ## 构建
 
@@ -34,6 +42,14 @@ python -m esptool --chip esp32s3 --port COM15 write-flash --flash-mode dio --fla
 python -m esptool --chip esp32s3 --port COM15 write-flash --flash-mode dio --flash-size 16MB 0x0 firmware/binaries/TextSenderBridge.ino.bootloader.bin 0x8000 firmware/binaries/TextSenderBridge.ino.partitions.bin 0xe000 firmware/binaries/boot_app0.bin 0x10000 firmware/binaries/TextSenderBridge.ino.bin
 ```
 
+已经刷过本项目 0.1.0 固件、分区布局不变时，可只更新应用以保留 NVS 配网记录：
+
+```powershell
+python -m esptool --chip esp32s3 --port COM15 write-flash 0x10000 firmware/binaries/TextSenderBridge.ino.bin
+```
+
+这里使用的是应用文件 `.ino.bin`，不是 `.ino.merged.bin`；写入完整合并镜像或擦除闪存后可能需要重新配网。
+
 按住 BOOT、短按 RESET、松开 BOOT 可进入下载模式。此版本已完成本机编译，Switch 端 USB/按键效果仍需连接实机验证。
 
 ## 协议
@@ -44,6 +60,9 @@ python -m esptool --chip esp32s3 --port COM15 write-flash --flash-mode dio --fla
 | --- | --- |
 | `GET /status` | 固件版本、boot_id、键盘任务、gamepad、USB 状态、station_ip |
 | `POST /wifi` | `ssid,password`，保存并加入路由器 |
+| `GET /wifi/status` | 配网状态、当前 SSID、station_ip、失败原因、重试与热点关闭倒计时；不含密码 |
+| `GET /wifi/scan` | 异步搜索附近网络；`?refresh=1` 重新搜索；扫描中返回 202 |
+| `POST /wifi/finish` | 已连接路由器时提前结束配网热点 |
 | `POST /text` | `plain,gap,line,layout=us`；1–16384 个 ASCII 字符，Tab/换行可用；gap/line 为 0–60000 ms |
 | `POST /tap` | `key,mod,gap,line=0`；单键加修饰键 |
 | `POST /pad` | `buttons,dpad,lx,ly,rx,ry,hold,epoch`；独立有限按压任务 |

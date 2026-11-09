@@ -23,6 +23,6 @@ if (Test-Path -LiteralPath (Join-Path $firmwareOutput 'TextSenderBridge.ino.merg
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\firmware.md') -Destination (Join-Path $bundle 'README.md') -Force
     Copy-Item -LiteralPath (Join-Path $repoRoot 'firmware\NOTICE.md') -Destination $bundle -Force
     Copy-Item -LiteralPath (Join-Path $repoRoot 'firmware\LICENSE'),(Join-Path $repoRoot 'firmware\TINYUSB-LICENSE.txt'),(Join-Path $repoRoot 'firmware\SWITCH-DESCRIPTOR-LICENSE.txt') -Destination $bundle -Force
-    Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath (Join-Path $artifacts 'TextSenderBridge-v0.1.0-ESP32S3-16MB.zip') -Force
+    Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath (Join-Path $artifacts 'TextSenderBridge-v0.1.1-ESP32S3-16MB.zip') -Force
 }
 Write-Host "Published: $archive"

@@ -2,14 +2,12 @@
 // Copyright (c) 2026 TextSender Studio contributors
 // Independent implementation of the documented TextSender HTTP input protocol.
 #include <Arduino.h>
-#include <WiFi.h>
 #include <WebServer.h>
-#include <Preferences.h>
 #include <USB.h>
 #include "esp_system.h"
-#include "esp_wifi.h"
 #include "StudioInput.h"
 #include "StudioUsb.h"
+#include "StudioWifi.h"
 
 WebServer http(80);
 SemaphoreHandle_t runtimeMutex;
@@ -57,7 +55,7 @@ bool readyRequest(){if(!usbStarted||!studioUsb::readyForInput()){errorReply(409,
 void getStatus(){
   RuntimeLock lock;if(!lock){errorReply(503,"runtime_busy");return;}
   String s; s.reserve(1100);
-  s="{\"firmware\":\"textsender-studio-0.1.0\",\"mode\":\"dual\",\"usb_interfaces\":2,\"boot_id\":"+String(bootId);
+  s="{\"firmware\":\"textsender-studio-0.1.1\",\"mode\":\"dual\",\"usb_interfaces\":2,\"boot_id\":"+String(bootId);
   s+=",\"usb_mounted\":";s+=studioUsb::available()?"true":"false";
   s+=",\"input_ready\":";s+=studioUsb::readyForInput()?"true":"false";
   s+=",\"busy\":";s+=keyBusy?"true":"false";
@@ -73,8 +71,7 @@ void getStatus(){
   s+=",\"stream\":{\"supported\":true,\"active\":";s+=padLeased?"true":"false";
   s+=",\"queued\":"+String(frameCount)+",\"next_sequence\":"+String(padSequence)+",\"capacity\":16,\"lease_ms\":600}}";
   s+=",\"connection_control\":{\"usb_enabled\":";s+=studioUsb::enabled()?"true":"false";s+="}";
-  s+=",\"ip\":\""+WiFi.softAPIP().toString()+"\",\"station_ip\":\""+WiFi.localIP().toString()+"\",\"station_connected\":";
-  s+=WiFi.status()==WL_CONNECTED?"true":"false";s+="}";
+  studioWifi::appendStatus(s);s+="}";
   http.send(200,"application/json",s);
 }
 
@@ -198,16 +195,6 @@ void usbWorker(void*){
   }
 }
 
-void configureWifi(){
-  String ssid=http.arg("ssid"),password=http.arg("password");
-  if(ssid.isEmpty()||ssid.length()>32||(!password.isEmpty()&&(password.length()<8||password.length()>63))){errorReply(400,"invalid_wifi_credentials");return;}
-  Preferences store;if(!store.begin("tsstudio",false)){errorReply(500,"wifi_save_failed");return;}
-  bool saved=store.putString("ssid",ssid)>0;
-  if(password.isEmpty())store.remove("password");else saved=store.putString("password",password)>0&&saved;
-  store.end();if(!saved){errorReply(500,"wifi_save_failed");return;}
-  http.send(200,"application/json","{\"saved\":true,\"connecting\":true}");
-  WiFi.setAutoReconnect(true);WiFi.begin(ssid.c_str(),password.c_str());
-}
 void setup(){
   runtimeMutex=xSemaphoreCreateMutex();bootId=esp_random();padEpoch=esp_random();
   usbStarted=studioUsb::start();USB.VID(0x0f0d);USB.PID(0x00c1);
@@ -215,16 +202,14 @@ void setup(){
   USB.usbClass(0);USB.usbSubClass(0);USB.usbProtocol(0);USB.usbPower(100);
   usbStarted=USB.begin()&&usbStarted;
   if(!runtimeMutex||xTaskCreatePinnedToCore(usbWorker,"studio-usb",6144,nullptr,2,nullptr,1)!=pdPASS)usbStarted=false;
-  WiFi.mode(WIFI_AP_STA);WiFi.softAP("TextSender-Setup","TextSender32",6,false,1);esp_wifi_set_ps(WIFI_PS_NONE);
-  Preferences store;if(store.begin("tsstudio",true)){String ssid=store.getString("ssid",""),password=store.getString("password","");store.end();if(!ssid.isEmpty()){WiFi.setAutoReconnect(true);WiFi.begin(ssid.c_str(),password.c_str());}}
+  studioWifi::begin(http);
   const char *headers[]={"X-Job"};http.collectHeaders(headers,1);
-  http.on("/",HTTP_GET,[]{http.send(200,"text/html; charset=utf-8","<meta charset='utf-8'><title>TextSender Wi-Fi</title><h1>TextSender Studio</h1><form method='post' action='/wifi'>SSID <input name='ssid' maxlength='32' required><br>Password <input name='password' type='password' maxlength='63'><br><button>Save Wi-Fi</button></form><p>GET /status shows station_ip after joining Wi-Fi.</p>");});
-  http.on("/status",HTTP_GET,getStatus);http.on("/wifi",HTTP_POST,configureWifi);
+  http.on("/status",HTTP_GET,getStatus);
   http.on("/text",HTTP_POST,[]{startKeyboard(false);});http.on("/tap",HTTP_POST,[]{startKeyboard(true);});
   http.on("/keyboard/report",HTTP_POST,keyboardReport);http.on("/pad",HTTP_POST,pulsePad);http.on("/pad/stream",HTTP_POST,streamPad);
   http.on("/cancel",HTTP_POST,[]{RuntimeLock lock;if(!lock){errorReply(503,"runtime_busy");return;}clearInputs("cancelled");http.send(200,"application/json","{\"cancelled\":true}");});
   http.on("/disconnect",HTTP_POST,[]{RuntimeLock lock;if(!lock){errorReply(503,"runtime_busy");return;}clearInputs("disconnected");uint8_t keys[8]={};studioUsb::write(studioUsb::Keys,keys);studioUsb::write(studioUsb::Pad,reinterpret_cast<uint8_t*>(&padCurrent));if(!studioUsb::enable(false)){errorReply(503,"disconnect_failed");return;}okReply();});
   http.on("/connect",HTTP_POST,[]{RuntimeLock lock;if(!lock){errorReply(503,"runtime_busy");return;}clearInputs("reconnected");if(!studioUsb::enable(true)){errorReply(503,"connect_failed");return;}okReply();});
-  http.onNotFound([]{errorReply(404,"not_found");});http.begin();
+  http.begin();
 }
-void loop(){http.handleClient();delay(1);}
+void loop(){studioWifi::poll();http.handleClient();delay(1);}

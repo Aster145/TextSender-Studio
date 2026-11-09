@@ -14,3 +14,13 @@ jobs:
       - name: Build standalone single-file executable
         shell: pwsh
         run: ./build-singlefile.ps1
+      - name: Check firmware Wi-Fi timing and reset behavior
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "STUDIO_VS=%%i"
+          call "%STUDIO_VS%\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist work\wifi-checks mkdir work\wifi-checks
+          cl /nologo /EHsc /std:c++17 /W4 /WX firmware\tests\wifi_timing_checks.cpp /Fo:work\wifi-checks\wifi_timing_checks.obj /Fe:work\wifi-checks\wifi_timing_checks.exe
+          if errorlevel 1 exit /b 1
+          work\wifi-checks\wifi_timing_checks.exe
