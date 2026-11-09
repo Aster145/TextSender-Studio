@@ -44,6 +44,9 @@ internal static class Program
             Check(!editor.Text.Contains("项目一已保存"), "second project editor remains isolated");
             projects.SelectedIndex = 0; Pump();
             Check(editor.Text.Contains("项目一已保存"), "switching back restores saved script");
+            _checks += HttpEditorChecks.Run(main, store, output);
+            ScriptEditorChecks.Run(main, Check);
+            DialogEditorChecks.Run(main, Check, (window, name) => Capture(window, Path.Combine(output, name)));
 
             var settingsBefore = store.LoadSettings();
             OpenSettings(main, dialog =>
@@ -56,7 +59,7 @@ internal static class Program
             OpenSettings(main, dialog =>
             {
                 Field(dialog, "ESP32-S3 · IP / 主机名").Text = "192.168.1.88"; Field(dialog, "ESP32 端口").Text = "8080";
-                Field(dialog, "手指机器人 · IP / 主机名").Text = "192.168.1.89"; Field(dialog, "机器人端口").Text = "8081";
+                Field(dialog, "默认 HTTP 设备 · IP / 主机名").Text = "192.168.1.89"; Field(dialog, "HTTP 默认端口").Text = "8081";
                 Field(dialog, "HTTP 请求超时（ms）").Text = "3500";
                 Descendants<CheckBox>(dialog).First(c => c.Content?.ToString()?.StartsWith("显示手动控制栏") == true).IsChecked = true;
                 Button(dialog, "保存设置").RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
@@ -81,8 +84,32 @@ internal static class Program
             typeof(MainWindow).GetField("_frame", HiddenInstance)!.SetValue(main, frame);
             Control<ImageRegionView>(main, "CaptureView").SetFrame(frame);
             Control<ImageRegionView>(main, "CaptureView").Region = new() { X = 160, Y = 100, Width = 320, Height = 160 };
+            Control<TextBlock>(main, "CaptureStatus").Text = "界面检查 · 模拟画面，未打开真实采集设备";
+            var mainTab = (TabItem)Control<TabControl>(main, "MainTabs").Items[0];
+            var mainScroll = (ScrollViewer)mainTab.Content;
+            Control<TabControl>(main, "MainTabs").SelectedIndex = 0;
+            mainScroll.ScrollToTop(); Pump();
             main.UpdateLayout(); Pump(); Capture(main, Path.Combine(output, "main-1280x900.png"));
             Check(File.Exists(Path.Combine(output, "main-1280x900.png")), "desktop layout rendered with synthetic image only");
+            var sampleLabelPath = store.Resolve("01-主项目", "labels/ui-test.png");
+            File.WriteAllBytes(sampleLabelPath, frame.Png);
+            var project = (StudioProject)typeof(MainWindow).GetField("_project", HiddenInstance)!.GetValue(main)!;
+            project.Labels.Add(new() { Name = "准备画面", ImagePath = "labels/ui-test.png" });
+            typeof(MainWindow).GetMethod("RefreshResources", HiddenInstance)!.Invoke(main, null);
+            Control<TabControl>(main, "MainTabs").SelectedIndex = 1; Pump();
+            Capture(main, Path.Combine(output, "labels.png"));
+            main.Width = 1000; main.Height = 720;
+            Control<TabControl>(main, "MainTabs").SelectedIndex = 2; Pump();
+            Capture(main, Path.Combine(output, "http-1000x720.png"));
+            var saveButton = Control<Button>(main, "SaveHttpButton");
+            var position = saveButton.TranslatePoint(new Point(), main);
+            Check(position.Y >= 0 && position.Y + saveButton.ActualHeight < main.ActualHeight - 24, "HTTP action footer stays visible at minimum window size");
+            Control<TabControl>(main, "MainTabs").SelectedIndex = 0; mainScroll.ScrollToTop(); Pump();
+            Capture(main, Path.Combine(output, "main-1000x720.png"));
+            main.Width = 1280; main.Height = 900; Pump();
+            var help = (Expander)Control<SyntaxHelpView>(main, "ScriptSyntaxHelp").Content;
+            help.IsExpanded = true; help.BringIntoView(); Pump();
+            Capture(main, Path.Combine(output, "syntax-help.png")); help.IsExpanded = false;
             // Force completed cleanup to cover the synchronous Closing-event path.
             var closingCapture = (IAsyncDisposable)typeof(MainWindow).GetField("_capture", HiddenInstance)!.GetValue(main)!;
             var closingBridge = (IAsyncDisposable)typeof(MainWindow).GetField("_bridge", HiddenInstance)!.GetValue(main)!;
@@ -154,7 +181,10 @@ internal static class Program
     private static void Capture(Window window, string path)
     {
         window.UpdateLayout();
-        var image = new RenderTargetBitmap((int)Math.Ceiling(window.ActualWidth), (int)Math.Ceiling(window.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+        var content = (FrameworkElement)window.Content;
+        var width = content.ActualWidth + content.Margin.Left + content.Margin.Right;
+        var height = content.ActualHeight + content.Margin.Top + content.Margin.Bottom;
+        var image = new RenderTargetBitmap((int)Math.Ceiling(width), (int)Math.Ceiling(height), 96, 96, PixelFormats.Pbgra32);
         image.Render(window); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
         using var file = File.Create(path); encoder.Save(file);
     }

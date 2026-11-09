@@ -21,6 +21,7 @@ public sealed class AppSettings
     public string LastProject { get; set; } = "";
     public string Transport { get; set; } = "WiFi";
     public string SerialPort { get; set; } = "";
+    public PushNotificationSettings PushNotifications { get; set; } = new();
     [System.Text.Json.Serialization.JsonIgnore] public string EspBaseUrl => $"http://{EspHost}:{EspPort}";
     [System.Text.Json.Serialization.JsonIgnore] public string RobotBaseUrl => $"{RobotScheme}://{RobotHost}:{RobotPort}";
 }
@@ -33,6 +34,7 @@ public sealed class StudioProject
     public List<ScriptShortcut> Shortcuts { get; set; } = [];
     public List<ImageLabel> Labels { get; set; } = [];
     public List<HttpAction> HttpActions { get; set; } = [];
+    public List<SoundAction> Sounds { get; set; } = [];
     public CaptureSettings Capture { get; set; } = new();
 }
 
@@ -58,6 +60,15 @@ public sealed class HttpAction
     public string Name { get; set; } = "新动作";
     public string FunctionName { get; set; } = "http_action";
     public List<HttpStep> Steps { get; set; } = [new()];
+}
+
+public sealed class SoundAction
+{
+    public string Name { get; set; } = "声音提醒";
+    public string FunctionName { get; set; } = "sound_notice";
+    public string Source { get; set; } = "System";
+    public string SystemSound { get; set; } = "Asterisk";
+    public string FilePath { get; set; } = "";
 }
 
 public sealed class HttpStep

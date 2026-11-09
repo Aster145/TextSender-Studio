@@ -8,9 +8,9 @@ TextSender Studio 使用 EasyCon 的实际词法分析器、编译器和 ECX 托
 - `IF / ELIF / ELSE / ENDIF`、`FOR / NEXT`、`WHILE / UNTIL`、`BREAK / CONTINUE`。
 - `FUNC / ENDFUNC / RETURN` 和 `CALL`，参数及返回值按 EasyCon 规则解析。
 - `WAIT`、普通手柄按键、`DOWN / UP` 保持状态、左右摇杆及定时回中。
-- `PRINT` / `ALERT` 输出到程序日志；`TIME`、`RAND` 和解释器的内建运算。
+- `PRINT` 输出到程序日志；`ALERT` 同时调用设置中启用的推送服务。支持 `TIME`、`RAND` 和解释器的内建运算。
 - `@标签名` 调用当前项目的图像标签，返回整数匹配度 **0–100**。标签的图片、搜索范围和匹配方式在“图像标签”中设置。
-- 当前项目的常用短语、启动脚本和 HTTP 动作作为无参数函数，用 `CALL 函数名` 调用。
+- 当前项目的常用短语、启动脚本、HTTP 动作和声音提醒作为无参数函数，用 `CALL 函数名` 调用。
 
 这是语言语法兼容和上述宿主能力的接入，并不等于支持 EasyCon 的所有硬件与扩展。Amiibo、OCR、ONNX 推理、`FRAME` / `ROI` 图像对象函数、脚本文件句柄 API、交互式标准输入和外部 DLL 的原生函数尚未接入；执行到它们会报告不支持。多文件模块和旧版 `.IL` 标签格式不在本版导入范围内。
 
@@ -54,7 +54,48 @@ CALL robot_tap
 
 这些函数不需要在脚本中重复写 `FUNC`。运行前由 Studio 注册为当前项目的外部动作，按顺序执行。启动脚本是否等待退出由对应快捷脚本设置决定。未配置的函数名会在编译时报告错误。
 
-函数名使用字母、数字、下划线，并以字母或下划线开头；三个动作分类共用命名空间。不要与脚本中已定义的函数、`SEND_TEXT`、`KEYBOARD` 或语言内建函数重名。
+函数名使用字母、数字、下划线，并以字母或下划线开头；四个动作分类共用命名空间。不要与脚本中已定义的函数、`SEND_TEXT`、`KEYBOARD`、`HTTP_GET`、`HTTP_POST`、`HTTP_REQUEST` 或语言内建函数重名。
+
+## 直接发送 HTTP
+
+也可以直接在脚本中写完整 URL，不必保存 HTTP 动作或填写默认设备：
+
+```text
+HTTP_GET "http://192.168.1.50/api/cmd?cmd=shortpress"
+WAIT 500
+HTTP_POST "http://192.168.1.60/control", "{\"on\":true}"
+HTTP_REQUEST "PUT", "https://device.example/api/state", "ready", "text/plain"
+```
+
+`HTTP_GET` 接受 URL；`HTTP_POST` 接受 URL 和 JSON 正文；`HTTP_REQUEST` 接受方法、URL、正文和 Content-Type。方法支持 GET / POST / PUT / PATCH / DELETE / HEAD。每条指令可以指向不同的设备、域名和端口，超时使用全局 HTTP 超时设置。请求失败会停止本次脚本；示例地址需替换成自己的设备和接口。
+
+## 编辑器
+
+主标签的“语法说明与示例”可展开查看，并将示例插入光标处。编辑器显示行号和当前位置，输入命令时提供补全；`Ctrl+Space` 手动打开建议，方向键选择，`Enter` 或 `Tab` 接受，`Esc` 关闭。
+
+`Enter` 自动延续缩进并识别条件、循环和函数块；`Tab` / `Shift+Tab` 可调整选中多行的缩进。双击函数名或按 `F12` 跳到脚本内定义，或打开对应短语、启动脚本、声音提醒、HTTP 动作；图像标签也可跳到其详情。切换“普通文字”模式会关闭脚本补全、缩进与跳转。
+
+## 声音与推送
+
+在主标签点击“声音提醒”，为当前项目新增函数，选择 Windows 系统提示音或本地音乐文件（MP3 / WAV / WMA）。系统提示音使用 Windows 当前声音方案；音乐文件播放一次，播放结束后继续脚本，点击“停止”会停止播放。音乐文件保留在所选位置，移动项目时应一并保留该文件，也可使用相对于项目目录的路径。
+
+```text
+CALL sound_notice
+BEEP 800, 200
+ALERT 操作完成
+```
+
+`sound_notice` 需先创建。`BEEP` 使用频率（Hz）和时长（ms）。`ALERT` 保留 EasyCon 的字符串拼接语法，例如 `ALERT 已完成 & $count & 次`。
+
+在“设置 → 推送服务”中启用并配置 PushPlus、Bark 或自定义 Webhook，可同时启用多个服务。支持 EasyCon 原有的 `{{token}}`、`{{title}}`、`{{content}}` 及自定义变量，GET / POST、请求头与正文。URL 中变量会编码，JSON 字符串中的变量会转义；JSON 占位符应放在引号内。超时单位为毫秒；推送失败写入执行日志，不自动重发。未启用服务时 `ALERT` 只写日志。
+
+推送凭据保存在本机 `settings.json`，不进入源码仓库。不要将自己的设置文件随项目公开分享。
+
+## HTTP 步骤编辑
+
+“HTTP 动作”默认只读。打开“允许编辑”后，可修改动作、点“新增一行”、删除选中行、上移或下移。表格顺序就是执行顺序，不支持按列排序。关闭编辑、切换动作或项目时保存有效修改；输入无效时保留草稿并提示修正。关闭编辑仍可执行动作或插入函数。
+
+每一步可以直接填写完整地址，例如 `GET http://192.168.1.50/api/cmd?cmd=shortpress`，后续步骤可指向另一个设备。支持 HTTP / HTTPS、域名和自定义端口，无需另外配置动作的默认地址。已有 `/api/...` 相对路径继续使用设置中的默认 HTTP 设备。请求正文和 Content-Type 位于步骤下方的可展开区域。
 
 ## 文字和键盘扩展
 

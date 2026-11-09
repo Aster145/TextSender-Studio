@@ -39,7 +39,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         _store = new(App.DataRoot); _settings = _store.LoadSettings(); ProjectStore.ValidateSettings(_settings);
-        InitializeComponent(); _bridge = CreateBridge();
+        InitializeComponent(); InitializeScriptEditor(); _bridge = CreateBridge();
         TransportPicker.SelectionChanged += (_, _) => { if (_initializing) return; SerialPicker.Visibility = TransportPicker.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed; };
         _capture.FrameReady += frame =>
         {
@@ -67,7 +67,7 @@ public partial class MainWindow : Window
         SendDelay.Text = _settings.SendDelayMs.ToString(); CharacterDelay.Text = _settings.CharacterDelayMs.ToString(); LineDelay.Text = _settings.LineDelayMs.ToString();
         ClearIndent.IsChecked = _settings.ClearAutoIndent; PhraseEnter.IsChecked = _settings.PhraseAutoEnter;
         TransportPicker.SelectedIndex = _settings.Transport == "Serial" ? 1 : 0; SerialPicker.Visibility = TransportPicker.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
-        RobotAddress.Text = string.IsNullOrWhiteSpace(_settings.RobotHost) ? "请在设置中填写机器人 IP" : _settings.RobotBaseUrl;
+        RobotAddress.Text = string.IsNullOrWhiteSpace(_settings.RobotHost) ? "默认设备未设置；完整 URL 可直接使用" : _settings.RobotBaseUrl;
     }
     private void ReadTiming()
     {
@@ -99,7 +99,7 @@ public partial class MainWindow : Window
     private static string ReadFile(string path) => File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : "";
     private void SaveProject()
     {
-        if (_project == null) return; ReadTiming();
+        if (_project == null) return; SavePendingHttp(); ReadTiming();
         if (_mode == 0) _scriptBuffer = ScriptEditor.Text; else _textBuffer = ScriptEditor.Text;
         File.WriteAllText(_store.Resolve(_directory, _project.MainScript), _scriptBuffer, new UTF8Encoding(false));
         File.WriteAllText(_store.Resolve(_directory, "draft.txt"), _textBuffer, new UTF8Encoding(false));
@@ -111,8 +111,9 @@ public partial class MainWindow : Window
         foreach (var phrase in _project.Phrases) AddActionButton(PhrasesPanel, phrase.Name, phrase.FunctionName, true);
         foreach (var shortcut in _project.Shortcuts) AddActionButton(ShortcutsPanel, shortcut.Name, shortcut.FunctionName, false);
         LabelsList.ItemsSource = null; LabelsList.ItemsSource = _project.Labels; LabelsList.SelectedIndex = _project.Labels.Count > 0 ? 0 : -1; LabelDetails.Visibility = _project.Labels.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        HttpList.ItemsSource = null; HttpList.ItemsSource = _project.HttpActions; HttpList.SelectedIndex = _project.HttpActions.Count > 0 ? 0 : -1; HttpDetails.Visibility = _project.HttpActions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        LabelEmpty.Visibility = _project.Labels.Count == 0 ? Visibility.Visible : Visibility.Collapsed; HttpEmpty.Visibility = _project.HttpActions.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RefreshHttpActions();
+        RefreshEditorContext();
+        LabelEmpty.Visibility = _project.Labels.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
     private void AddActionButton(Panel panel, string name, string function, bool input)
     {
@@ -164,7 +165,7 @@ public partial class MainWindow : Window
         var frame = _capture.GetLatestFrame() ?? throw new InvalidOperationException("请先开始画面预览。");
         if (DateTimeOffset.Now - frame.CapturedAt > TimeSpan.FromSeconds(5)) throw new InvalidOperationException("采集画面已过期，请检查画面来源。");
         return await Task.Run(() => TemplateMatcher.Match(frame, ImageTools.Load(_store.Resolve(_directory, label.ImagePath)), label).Score, token);
-    }, Log);
+    }, Log, (sound, token) => SoundPlayback.PlayAsync(sound, _store.ProjectPath(_directory), token));
     private async Task RunOperation(Func<CancellationToken, Task> work, bool releaseInput = false)
     {
         if (_operation != null) { Log("已有操作正在执行，请先停止。"); return; }
@@ -197,6 +198,7 @@ public partial class MainWindow : Window
         if (_initializing || ScriptEditor == null || _mode == EditorMode.SelectedIndex) return;
         if (_mode == 0) _scriptBuffer = ScriptEditor.Text; else _textBuffer = ScriptEditor.Text; _mode = EditorMode.SelectedIndex;
         ScriptEditor.Text = _mode == 0 ? _scriptBuffer : _textBuffer; ScriptFileName.Text = _mode == 0 ? _project?.MainScript ?? "main.ecs" : "draft.txt"; RunButton.Content = _mode == 0 ? "运行脚本" : "发送文字";
+        RefreshEditorContext();
     }
     private void LoadScriptClick(object sender, RoutedEventArgs e)
     {
@@ -209,7 +211,7 @@ public partial class MainWindow : Window
     private void InsertFunctionClick(object sender, RoutedEventArgs e)
     {
         if (_project == null) return; var names = Actions(_project).FunctionNames;
-        if (names.Count == 0) { Log("请先添加短语、启动脚本或 HTTP 动作。"); return; }
+        if (names.Count == 0) { Log("请先添加短语、启动脚本、声音提醒或 HTTP 动作。"); return; }
         var dialog = Dialogs.Window(this, "插入函数"); var panel = new StackPanel { Margin = new(24) }; var list = new ComboBox { ItemsSource = names, SelectedIndex = 0, Margin = new(0, 0, 0, 20) }; panel.Children.Add(list); var actions = new WrapPanel(); panel.Children.Add(actions); Dialogs.Button(actions, "取消", () => dialog.DialogResult = false); Dialogs.Button(actions, "插入", () => dialog.DialogResult = true, true); dialog.Content = panel;
         if (dialog.ShowDialog() == true) InsertCode("CALL " + list.SelectedItem);
     }
@@ -217,8 +219,13 @@ public partial class MainWindow : Window
     private void ManageShortcutsClick(object sender, RoutedEventArgs e) => ManageResources(false);
     private void ManageResources(bool phrases)
     {
-        if (_project == null || _operation != null) return; var editor = new ResourceEditorWindow(this, _project, phrases);
-        if (editor.ShowDialog() == true) { _project = editor.Result; _store.Save(_directory, _project); RefreshResources(); }
+        if (_project == null || _operation != null) return;
+        try
+        {
+            SaveProject(); var editor = new ResourceEditorWindow(this, _project, phrases);
+            if (editor.ShowDialog() == true) { _store.Save(_directory, editor.Result); _project = editor.Result; RefreshResources(); }
+        }
+        catch (Exception error) { Dialogs.Error(this, error); }
     }
     private async void PassthroughClick(object sender, RoutedEventArgs e)
     {
@@ -324,27 +331,6 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException) { } catch (Exception error) { Dialogs.Error(this, error); }
     }
-    private void NewHttpClick(object sender, RoutedEventArgs e)
-    {
-        if (_project == null) return; var suffix = Guid.NewGuid().ToString("N")[..8]; var action = new HttpAction { Name = "新动作_" + suffix, FunctionName = "http_" + suffix }; _project.HttpActions.Add(action); _store.Save(_directory, _project); RefreshResources(); HttpList.SelectedItem = action;
-    }
-    private void HttpSelected(object sender, SelectionChangedEventArgs e)
-    {
-        _selectedHttp = HttpList.SelectedItem as HttpAction; HttpDetails.Visibility = _selectedHttp == null ? Visibility.Collapsed : Visibility.Visible; if (_selectedHttp == null) return;
-        HttpName.Text = _selectedHttp.Name; HttpFunction.Text = _selectedHttp.FunctionName; _steps = new(_selectedHttp.Steps.Select(ProjectStore.Clone)); HttpSteps.ItemsSource = _steps; if (_steps.Count > 0) HttpSteps.SelectedIndex = 0;
-    }
-    private void SaveHttp()
-    {
-        if (_project == null || _selectedHttp == null) return; HttpSteps.CommitEdit(DataGridEditingUnit.Cell, true); HttpSteps.CommitEdit(DataGridEditingUnit.Row, true);
-        if (string.IsNullOrWhiteSpace(HttpName.Text) || _steps.Count == 0) throw new ArgumentException("动作名称和请求步骤不能为空。");
-        var clone = ProjectStore.Clone(_project); var index = _project.HttpActions.IndexOf(_selectedHttp); var changed = clone.HttpActions[index]; changed.Name = HttpName.Text.Trim(); changed.FunctionName = HttpFunction.Text.Trim(); changed.Steps = _steps.Select(ProjectStore.Clone).ToList();
-        foreach (var step in changed.Steps) if (step.WaitAfterMs < 0 || !step.Path.StartsWith('/') || step.Path.StartsWith("//") || new[] { "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD" }.All(m => m != step.Method.ToUpperInvariant())) throw new ArgumentException("请填写有效 HTTP 方法、/开头的路径和非负等待。");
-        ProjectStore.ValidateFunctions(clone); _selectedHttp.Name = changed.Name; _selectedHttp.FunctionName = changed.FunctionName; _selectedHttp.Steps = changed.Steps; _store.Save(_directory, _project); HttpList.Items.Refresh(); HttpResult.Text = "已保存。主脚本调用：CALL " + _selectedHttp.FunctionName;
-    }
-    private void SaveHttpClick(object sender, RoutedEventArgs e) { try { SaveHttp(); } catch (Exception error) { Dialogs.Error(this, error); } }
-    private void InsertHttpClick(object sender, RoutedEventArgs e) { try { SaveHttp(); if (_selectedHttp != null) InsertCode("CALL " + _selectedHttp.FunctionName); } catch (Exception error) { Dialogs.Error(this, error); } }
-    private async void RunHttpClick(object sender, RoutedEventArgs e) { try { SaveHttp(); if (_selectedHttp != null) await RunAction(_selectedHttp.FunctionName, false); } catch (Exception error) { Dialogs.Error(this, error); } }
-    private void DeleteHttpClick(object sender, RoutedEventArgs e) { if (_project == null || _selectedHttp == null) return; _project.HttpActions.Remove(_selectedHttp); _store.Save(_directory, _project); RefreshResources(); }
     private void StartLan()
     {
         var generation = ++_lanGeneration; _lan?.Dispose(); _lan = null; if (!_settings.LanEnabled) return;

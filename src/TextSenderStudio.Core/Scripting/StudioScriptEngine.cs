@@ -16,6 +16,18 @@ public interface IStatefulScriptActions
     Task SetPadStateAsync(string buttons, byte lx, byte ly, byte rx, byte ry, CancellationToken token);
 }
 
+/// <summary>Optional configured notification services for EasyCon ALERT.</summary>
+public interface IScriptNotificationActions
+{
+    Task AlertAsync(string content, CancellationToken token);
+}
+
+/// <summary>Direct full-URL HTTP requests from the script, independent of a configured device.</summary>
+public interface IScriptHttpActions
+{
+    Task RequestHttpAsync(string method, string url, string body, string contentType, CancellationToken token);
+}
+
 public sealed record ScriptDiagnostic(int Line, string Message, bool IsError)
 {
     public override string ToString() => Line > 0 ? $"第 {Line} 行：{Message}" : Message;
@@ -73,7 +85,13 @@ public sealed class StudioScriptEngine
                 StickClick = pad.TapStick,
                 ImgLabel = name => Match(actions, name, token),
                 Print = (text, _) => actions.Log(text),
-                Alert = text => actions.Log(text),
+                Alert = text =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (actions is IScriptNotificationActions notifications)
+                        notifications.AlertAsync(text, token).GetAwaiter().GetResult();
+                    else actions.Log(text);
+                },
                 ReadLine = () => throw new StudioScriptException("本版未接入交互式标准输入。"),
                 Amiibo = _ => throw new StudioScriptException("当前设备不支持 AMIIBO 指令。"),
                 Beep = (frequency, duration) =>
@@ -91,6 +109,17 @@ public sealed class StudioScriptEngine
                     actions.TypeAsync(context.Str(args[0]), token).GetAwaiter().GetResult();
                 else if (name == Library + "!KEYBOARD")
                     actions.KeyAsync(context.Str(args[0]), args[1].AsInt(), token).GetAwaiter().GetResult();
+                else if (name is Library + "!HTTP_GET" or Library + "!HTTP_POST" or Library + "!HTTP_REQUEST")
+                {
+                    if (actions is not IScriptHttpActions http)
+                        throw new StudioScriptException("当前宿主未接入 HTTP 请求。");
+                    if (name == Library + "!HTTP_GET")
+                        http.RequestHttpAsync("GET", context.Str(args[0]), "", "application/json", token).GetAwaiter().GetResult();
+                    else if (name == Library + "!HTTP_POST")
+                        http.RequestHttpAsync("POST", context.Str(args[0]), context.Str(args[1]), "application/json", token).GetAwaiter().GetResult();
+                    else
+                        http.RequestHttpAsync(context.Str(args[0]), context.Str(args[1]), context.Str(args[2]), context.Str(args[3]), token).GetAwaiter().GetResult();
+                }
                 else if (name.StartsWith(Library + "!", StringComparison.Ordinal)
                     && names.Contains(name[(Library.Length + 1)..], StringComparer.Ordinal))
                     actions.CallAsync(name[(Library.Length + 1)..], token).GetAwaiter().GetResult();
@@ -122,9 +151,12 @@ public sealed class StudioScriptEngine
     private static CompileResult Compile(string source, IEnumerable<string> functionNames)
     {
         var appended = new StringBuilder(source).AppendLine().AppendLine();
-        var seen = new HashSet<string>(StringComparer.Ordinal) { "SEND_TEXT", "KEYBOARD" };
+        var seen = new HashSet<string>(StringComparer.Ordinal) { "SEND_TEXT", "KEYBOARD", "HTTP_GET", "HTTP_POST", "HTTP_REQUEST" };
         appended.AppendLine("EXTERN FUNC SEND_TEXT($text: STRING) FROM \"textsender\"");
         appended.AppendLine("EXTERN FUNC KEYBOARD($keys: STRING, $ms: INT) FROM \"textsender\"");
+        appended.AppendLine("EXTERN FUNC HTTP_GET($url: STRING) FROM \"textsender\"");
+        appended.AppendLine("EXTERN FUNC HTTP_POST($url: STRING, $body: STRING) FROM \"textsender\"");
+        appended.AppendLine("EXTERN FUNC HTTP_REQUEST($method: STRING, $url: STRING, $body: STRING, $contentType: STRING) FROM \"textsender\"");
         foreach (var name in functionNames)
         {
             if (!Identifier.IsMatch(name) || !seen.Add(name))

@@ -15,6 +15,7 @@ public sealed class ProjectStore
     public void SaveSettings(AppSettings settings) { ValidateSettings(settings); Write(Path.Combine(Root, "settings.json"), settings); }
     public static void ValidateSettings(AppSettings s)
     {
+        PushNotificationDispatcher.Validate(s.PushNotifications);
         if (!Uri.TryCreate(s.EspBaseUrl, UriKind.Absolute, out var esp) || esp.Host.Length == 0 || s.EspHost.Contains('/')) throw new ArgumentException("ESP32 地址无效。请仅填写 IP 或主机名。");
         if (s.RobotHost.Length > 0 && (!Uri.TryCreate(s.RobotBaseUrl, UriKind.Absolute, out var robot) || robot.Host.Length == 0 || s.RobotHost.Contains('/'))) throw new ArgumentException("机器人地址无效。");
         if (s.RobotScheme is not ("http" or "https")) throw new ArgumentException("机器人协议须为 HTTP 或 HTTPS。");
@@ -60,11 +61,17 @@ public sealed class ProjectStore
     }
     public static void ValidateFunctions(StudioProject project)
     {
-        var names = project.Phrases.Select(p => p.FunctionName).Concat(project.Shortcuts.Select(p => p.FunctionName)).Concat(project.HttpActions.Select(p => p.FunctionName)).ToArray();
-        if (names.Any(n => n.Equals("SEND_TEXT", StringComparison.OrdinalIgnoreCase) || n.Equals("KEYBOARD", StringComparison.OrdinalIgnoreCase))) throw new ArgumentException("SEND_TEXT 和 KEYBOARD 是保留函数名。");
-        foreach (var labels in new[] { project.Phrases.Select(p => p.Name), project.Shortcuts.Select(p => p.Name), project.HttpActions.Select(p => p.Name), project.Labels.Select(p => p.Name) })
+        var names = project.Phrases.Select(p => p.FunctionName).Concat(project.Shortcuts.Select(p => p.FunctionName)).Concat(project.HttpActions.Select(p => p.FunctionName)).Concat(project.Sounds.Select(p => p.FunctionName)).ToArray();
+        if (names.Any(n => new[] { "SEND_TEXT", "KEYBOARD", "HTTP_GET", "HTTP_POST", "HTTP_REQUEST" }.Contains(n, StringComparer.OrdinalIgnoreCase))) throw new ArgumentException("SEND_TEXT、KEYBOARD、HTTP_GET、HTTP_POST 和 HTTP_REQUEST 是保留函数名。");
+        foreach (var labels in new[] { project.Phrases.Select(p => p.Name), project.Shortcuts.Select(p => p.Name), project.HttpActions.Select(p => p.Name), project.Labels.Select(p => p.Name), project.Sounds.Select(p => p.Name) })
             if (labels.Any(string.IsNullOrWhiteSpace) || labels.Distinct(StringComparer.Ordinal).Count() != labels.Count()) throw new ArgumentException("同类条目的显示名称不能为空或重复。");
         if (names.Any(n => !Regex.IsMatch(n ?? "", "^[A-Za-z_][A-Za-z0-9_]*$")) || names.Distinct(StringComparer.OrdinalIgnoreCase).Count() != names.Length) throw new ArgumentException("函数名须为不重复的字母、数字或下划线，并且不能以数字开头。");
+        foreach (var sound in project.Sounds)
+        {
+            if (sound.Source is not ("System" or "File")) throw new ArgumentException("声音来源须为系统提示音或音乐文件。");
+            if (sound.Source == "System" && !new[] { "Asterisk", "Beep", "Exclamation", "Hand", "Question" }.Contains(sound.SystemSound)) throw new ArgumentException("系统提示音无效。");
+            if (sound.Source == "File" && string.IsNullOrWhiteSpace(sound.FilePath)) throw new ArgumentException("请为声音提醒选择音乐文件。");
+        }
     }
     public static T? Read<T>(string path) => File.Exists(path) ? JsonSerializer.Deserialize<T>(File.ReadAllText(path, Encoding.UTF8), Json) : default;
     public static T Clone<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, Json), Json)!;

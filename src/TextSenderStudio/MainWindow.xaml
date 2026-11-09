@@ -1,6 +1,6 @@
-<Window x:Class="TextSenderStudio.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:TextSenderStudio" Title="TextSender Studio" Width="1280" Height="900" MinWidth="1000" MinHeight="720" WindowStartupLocation="CenterScreen" Icon="TextSenderStudio.ico" Closing="WindowClosing">
+<Window x:Class="TextSenderStudio.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:TextSenderStudio" Title="TextSender Studio" Style="{StaticResource {x:Type Window}}" Width="1280" Height="900" MinWidth="1000" MinHeight="720" WindowStartupLocation="CenterScreen" Icon="TextSenderStudio.ico" Closing="WindowClosing">
  <DockPanel>
-  <Border DockPanel.Dock="Top" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="20,16">
+  <Border DockPanel.Dock="Top" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="24,12">
    <StackPanel>
     <DockPanel>
      <Button DockPanel.Dock="Right" Content="设置" Click="SettingsClick" Margin="0"/>
@@ -10,36 +10,36 @@
       <ComboBox x:Name="ProjectPicker" Width="220" SelectionChanged="ProjectChanged"/>
       <Button Content="＋ 新增项目" Click="NewProjectClick"/>
       <Button Content="重命名" Click="RenameProjectClick"/>
-      <Button Content="删除项目" Click="DeleteProjectClick"/>
+      <Button Content="删除项目" Style="{StaticResource QuietButton}" Click="DeleteProjectClick"/>
      </WrapPanel>
     </DockPanel>
-    <TextBlock x:Name="ProjectLocation" Style="{StaticResource Caption}" Margin="0,12,0,0"/>
+    <TextBlock x:Name="ProjectLocation" Style="{StaticResource Caption}" Margin="0,8,0,0"/>
    </StackPanel>
   </Border>
-  <StatusBar DockPanel.Dock="Bottom" Background="{DynamicResource PanelBrush}" Padding="12,6"><StatusBarItem><TextBlock x:Name="ConnectionStatus" Text="ESP32 · 未连接"/></StatusBarItem><Separator/><StatusBarItem><TextBlock x:Name="RunStatus" Text="就绪"/></StatusBarItem><Separator/><StatusBarItem><TextBlock Text="等待单位 ms"/></StatusBarItem></StatusBar>
+  <Border DockPanel.Dock="Bottom" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="24,8"><DockPanel><TextBlock DockPanel.Dock="Right" Text="等待单位 · ms" Style="{StaticResource Caption}"/><StackPanel Orientation="Horizontal"><TextBlock x:Name="ConnectionStatus" Text="ESP32 · 未连接" Style="{StaticResource Caption}" Margin="0,0,24,0"/><TextBlock x:Name="RunStatus" Text="就绪" Style="{StaticResource Caption}"/></StackPanel></DockPanel></Border>
   <Grid>
    <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center"><TextBlock Text="还没有项目" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="新建项目后，脚本、短语和图像标签保存在程序旁的 projects 文件夹。" Margin="0,16"/><Button Content="新增项目" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Center" Click="NewProjectClick"/></StackPanel>
-   <TabControl x:Name="MainTabs" Margin="16,12" Visibility="Collapsed">
+   <TabControl x:Name="MainTabs" Margin="16,8" Visibility="Collapsed">
     <TabItem Header="主标签">
      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <StackPanel Margin="8,20,8,12">
-       <DockPanel Margin="0,0,0,20"><CheckBox x:Name="TopmostCheck" DockPanel.Dock="Right" Content="窗口置顶" Checked="TopmostChanged" Unchecked="TopmostChanged"/><TextBlock Text="输入与脚本" FontSize="20" FontWeight="SemiBold"/></DockPanel>
-       <WrapPanel Margin="0,0,0,12"><ComboBox x:Name="TransportPicker" Width="190"><ComboBoxItem Content="Wi-Fi · ESP32-S3" IsSelected="True" Tag="WiFi"/><ComboBoxItem Content="USB 串口" Tag="Serial"/></ComboBox><ComboBox x:Name="SerialPicker" Width="140" Visibility="Collapsed"/><Button Content="连接 / 检查" Click="ConnectClick"/><Button Content="刷新串口" Click="RefreshPortsClick"/><Button Content="键盘直通" Click="PassthroughClick"/><Button Content="目标 Caps Lock" Click="CapsClick"/><Button Content="局域网控制" Click="LanSettingsClick"/></WrapPanel>
-       <WrapPanel Margin="0,0,0,12"><TextBlock Text="发送前等待" Margin="0,0,8,0"/><TextBox x:Name="SendDelay" Width="76"/><TextBlock Text="ms　逐字间隔" Margin="8,0"/><TextBox x:Name="CharacterDelay" Width="76"/><TextBlock Text="ms　换行等待" Margin="8,0"/><TextBox x:Name="LineDelay" Width="76"/><TextBlock Text="ms" Margin="8,0"/><CheckBox x:Name="ClearIndent" Content="清除自动缩进"/></WrapPanel>
-       <WrapPanel Margin="0,0,0,12"><TextBlock Text="项目短语" Style="{StaticResource Caption}" Margin="0,0,12,0"/><WrapPanel x:Name="PhrasesPanel"/><Button Content="管理短语 / 函数" Click="ManagePhrasesClick"/><CheckBox x:Name="PhraseEnter" Content="发送后自动回车"/></WrapPanel>
-       <Expander Header="项目启动脚本" Margin="0,0,0,16"><WrapPanel Margin="12"><WrapPanel x:Name="ShortcutsPanel"/><Button Content="管理启动脚本 / 函数" Click="ManageShortcutsClick"/><Button Content="打开项目目录" Click="OpenProjectFolderClick"/></WrapPanel></Expander>
+      <StackPanel Margin="8,8,8,12">
+       <DockPanel Margin="0,0,0,16"><CheckBox x:Name="TopmostCheck" DockPanel.Dock="Right" Content="窗口置顶" Checked="TopmostChanged" Unchecked="TopmostChanged"/><TextBlock Text="输入与脚本" FontSize="20" FontWeight="SemiBold"/></DockPanel>
+       <Border Style="{StaticResource Panel}" Margin="0,0,0,12"><StackPanel><WrapPanel Margin="0,0,0,12"><ComboBox x:Name="TransportPicker" Width="190"><ComboBoxItem Content="Wi-Fi · ESP32-S3" IsSelected="True" Tag="WiFi"/><ComboBoxItem Content="USB 串口" Tag="Serial"/></ComboBox><ComboBox x:Name="SerialPicker" Width="140" Visibility="Collapsed"/><Button Content="连接 / 检查" Click="ConnectClick"/><Button Content="刷新串口" Click="RefreshPortsClick"/><Button Content="键盘直通" Click="PassthroughClick"/><Button Content="目标 Caps Lock" Click="CapsClick"/><Button Content="局域网控制" Click="LanSettingsClick"/></WrapPanel>
+       <Expander Header="发送参数 · 毫秒" Margin="0,0,0,0"><WrapPanel Margin="0,12,0,0"><TextBlock Text="发送前等待" Margin="0,0,8,0"/><TextBox x:Name="SendDelay" Width="76"/><TextBlock Text="ms　逐字间隔" Margin="8,0"/><TextBox x:Name="CharacterDelay" Width="76"/><TextBlock Text="ms　换行等待" Margin="8,0"/><TextBox x:Name="LineDelay" Width="76"/><TextBlock Text="ms" Margin="8,0"/><CheckBox x:Name="ClearIndent" Content="清除自动缩进"/></WrapPanel></Expander></StackPanel></Border>
+       <Border Style="{StaticResource Panel}" Margin="0,0,0,16"><StackPanel><WrapPanel><TextBlock Text="项目资源" Style="{StaticResource Caption}" Margin="0,0,12,0"/><WrapPanel x:Name="PhrasesPanel"/><Button Content="管理短语" Style="{StaticResource QuietButton}" Click="ManagePhrasesClick"/><CheckBox x:Name="PhraseEnter" Content="发送后自动回车" Margin="8,4,24,4"/><WrapPanel x:Name="ShortcutsPanel"/><Button Content="启动脚本" Click="ManageShortcutsClick" Style="{StaticResource QuietButton}"/><Button Content="声音提醒" Click="ManageSoundsClick" Style="{StaticResource QuietButton}"/><Button Content="打开项目目录" Click="OpenProjectFolderClick" Style="{StaticResource QuietButton}"/></WrapPanel></StackPanel></Border>
+       <local:SyntaxHelpView x:Name="ScriptSyntaxHelp" Editor="{Binding ElementName=ScriptEditor}" Margin="0,0,0,12"/>
        <DockPanel Margin="0,0,0,12">
         <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><Button Content="加载脚本 / 文本" Click="LoadScriptClick"/><Button Content="保存" Click="SaveScriptClick"/><Button x:Name="RunButton" Content="运行脚本" Style="{StaticResource PrimaryButton}" Click="RunClick"/><Button x:Name="StopButton" Content="停止" IsEnabled="False" Click="StopClick"/></StackPanel>
         <WrapPanel><ComboBox x:Name="EditorMode" Width="160" SelectionChanged="EditorModeChanged"><ComboBoxItem Content="主脚本 · EasyCon" IsSelected="True"/><ComboBoxItem Content="普通文字"/></ComboBox><Button Content="插入函数" Click="InsertFunctionClick"/></WrapPanel>
        </DockPanel>
        <Grid>
-        <Grid.ColumnDefinitions><ColumnDefinition Width="1*" MinWidth="340"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*" MinWidth="360"/></Grid.ColumnDefinitions>
-        <Border Style="{StaticResource Panel}"><DockPanel><DockPanel DockPanel.Dock="Top" Margin="0,0,0,12"><TextBlock x:Name="SaveState" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock x:Name="ScriptFileName" Text="main.ecs" FontWeight="SemiBold"/></DockPanel><TextBox x:Name="ScriptEditor" FontFamily="Consolas, Microsoft YaHei UI" FontSize="14" AcceptsReturn="True" AcceptsTab="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap" VerticalContentAlignment="Top" MinHeight="520" TextChanged="ScriptChanged"/></DockPanel></Border>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="3*" MinWidth="400"/><ColumnDefinition Width="16"/><ColumnDefinition Width="2*" MinWidth="340"/></Grid.ColumnDefinitions>
+        <Border Style="{StaticResource Panel}"><DockPanel><DockPanel DockPanel.Dock="Top" Margin="0,0,0,12"><TextBlock x:Name="SaveState" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock x:Name="ScriptFileName" Text="main.ecs" FontWeight="SemiBold"/></DockPanel><DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0"><TextBlock x:Name="EditorCaretStatus" Text="行 1 · 列 1" Style="{StaticResource Caption}" DockPanel.Dock="Right"/><TextBlock Text="Ctrl+Space 补全 · 双击函数跳转" Style="{StaticResource Caption}"/></DockPanel><local:ScriptEditorBox x:Name="ScriptEditor" Style="{StaticResource {x:Type TextBox}}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="14" AcceptsReturn="True" AcceptsTab="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap" VerticalContentAlignment="Top" Height="460" TextChanged="ScriptChanged"/></DockPanel></Border>
         <Border Grid.Column="2" Style="{StaticResource Panel}"><StackPanel>
          <TextBlock Text="画面与识图" Style="{StaticResource SectionTitle}"/>
-         <WrapPanel Margin="0,0,0,12"><ComboBox x:Name="CaptureSource" Width="155" SelectionChanged="CaptureSourceChanged"><ComboBoxItem Content="桌面 / 屏幕选区" Tag="Desktop" IsSelected="True"/><ComboBoxItem Content="采集卡 / 摄像头" Tag="Camera"/></ComboBox><ComboBox x:Name="CameraPicker" Width="160" DisplayMemberPath="Name" SelectedValuePath="Index" Visibility="Collapsed"/><Button Content="刷新设备" Click="RefreshCamerasClick"/><Button x:Name="CaptureButton" Content="开始预览" Click="CaptureClick"/></WrapPanel>
-         <WrapPanel Margin="0,0,0,12"><Button x:Name="DesktopRegionButton" Content="选择屏幕采集范围" Click="DesktopRegionClick"/><Button x:Name="SelectRegionButton" Content="框选识图区域" Click="SelectRegionClick"/></WrapPanel>
-         <local:ImageRegionView x:Name="CaptureView" Height="220" RegionChanged="RecognitionRegionChanged"/>
+         <WrapPanel Margin="0,0,0,12"><ComboBox x:Name="CaptureSource" Width="175" SelectionChanged="CaptureSourceChanged"><ComboBoxItem Content="桌面 / 屏幕选区" Tag="Desktop" IsSelected="True"/><ComboBoxItem Content="采集卡 / 摄像头" Tag="Camera"/></ComboBox><ComboBox x:Name="CameraPicker" Width="160" DisplayMemberPath="Name" SelectedValuePath="Index" Visibility="Collapsed"/><Button Content="刷新设备" Click="RefreshCamerasClick"/><Button x:Name="CaptureButton" Content="开始预览" Click="CaptureClick"/></WrapPanel>
+         <WrapPanel Margin="0,0,0,12"><Button x:Name="DesktopRegionButton" Content="屏幕采集范围" Click="DesktopRegionClick"/><Button x:Name="SelectRegionButton" Content="框选识图区域" Click="SelectRegionClick"/></WrapPanel>
+         <local:ImageRegionView x:Name="CaptureView" Height="200" RegionChanged="RecognitionRegionChanged"/>
          <TextBlock x:Name="CaptureStatus" Text="点击“开始预览”获取真实画面。" Style="{StaticResource Caption}" Margin="0,8,0,16"/>
          <TextBlock Text="识图区域" FontWeight="SemiBold" Margin="0,0,0,8"/>
          <WrapPanel Margin="0,0,0,8"><RadioButton x:Name="FullRegion" Content="全画面" GroupName="Region" IsChecked="True" Margin="0,0,16,0" Checked="RegionModeChanged"/><RadioButton x:Name="CustomRegion" Content="指定区域" GroupName="Region" Checked="RegionModeChanged"/></WrapPanel>
@@ -54,26 +54,59 @@
      </ScrollViewer>
     </TabItem>
     <TabItem Header="图像标签">
-     <DockPanel Margin="8,20">
-      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,20"><WrapPanel DockPanel.Dock="Right"><Button Content="插入主脚本" Click="InsertLabelClick"/><Button Content="加载标签" Click="ImportLabelClick"/><Button Content="＋ 制作标签" Style="{StaticResource PrimaryButton}" Click="NewLabelClick"/></WrapPanel><TextBlock Text="图像标签" FontSize="20" FontWeight="SemiBold"/></DockPanel>
-      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="250"/><ColumnDefinition Width="20"/><ColumnDefinition/></Grid.ColumnDefinitions>
-       <ListBox x:Name="LabelsList" DisplayMemberPath="Name" SelectionChanged="LabelSelected"/>
-       <Border Grid.Column="2" Style="{StaticResource Panel}"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel x:Name="LabelDetails"><TextBlock Text="标签名称" Style="{StaticResource Caption}"/><TextBox x:Name="LabelName" Margin="0,4,0,16"/><Image x:Name="LabelImage" Height="220" Stretch="Uniform" Margin="0,0,0,16"/><TextBlock Text="匹配阈值（%）" Style="{StaticResource Caption}"/><TextBox x:Name="LabelThreshold" Text="90" Width="100" HorizontalAlignment="Left" Margin="0,4,0,12"/><CheckBox x:Name="LabelGrayscale" Content="灰度模板匹配"/><TextBlock x:Name="LabelRegion" Text="搜索区域：全画面" Margin="0,12"/><WrapPanel><Button Content="采用主标签识图区域" Click="AdoptLabelRegionClick"/><Button Content="测试匹配" Click="TestLabelClick"/><Button Content="保存标签" Click="SaveLabelClick"/><Button Content="导出标签" Click="ExportLabelClick"/><Button Content="删除" Click="DeleteLabelClick"/></WrapPanel><TextBlock x:Name="LabelResult" Style="{StaticResource Caption}" Margin="0,16"/></StackPanel></ScrollViewer></Border>
-       <TextBlock x:Name="LabelEmpty" Grid.Column="2" Text="暂无图像标签。先开始画面预览，再制作标签；也可以加载已有标签或图片。" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="380" Foreground="{DynamicResource MutedBrush}"/>
+     <DockPanel Margin="8,8,8,12">
+      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16"><WrapPanel DockPanel.Dock="Right"><Button Content="插入主脚本" Click="InsertLabelClick"/><Button Content="加载标签" Click="ImportLabelClick"/><Button Content="＋ 制作标签" Style="{StaticResource PrimaryButton}" Click="NewLabelClick" Margin="0"/></WrapPanel><StackPanel><TextBlock Text="图像标签" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="保存目标图片与识别区域，供脚本判断画面。" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></DockPanel>
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="224"/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+       <Border Style="{StaticResource Panel}" Padding="8"><DockPanel><TextBlock DockPanel.Dock="Top" Text="当前项目的标签" Style="{StaticResource Caption}" Margin="8,8,8,12"/><ListBox x:Name="LabelsList" DisplayMemberPath="Name" SelectionChanged="LabelSelected"/></DockPanel></Border>
+       <Border Grid.Column="2" Style="{StaticResource Panel}"><Grid>
+        <DockPanel x:Name="LabelDetails">
+         <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0"><WrapPanel><Button Content="保存标签" Click="SaveLabelClick"/><Button Content="测试匹配" Click="TestLabelClick"/><Button Content="导出标签" Click="ExportLabelClick"/><Button Content="删除" Style="{StaticResource QuietButton}" Click="DeleteLabelClick"/></WrapPanel><TextBlock x:Name="LabelResult" Style="{StaticResource Caption}" Margin="0,8,0,0"/></StackPanel>
+         <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
+          <TextBlock Text="标签名称" Style="{StaticResource Caption}"/><TextBox x:Name="LabelName" Margin="0,4,0,16"/>
+          <Border Background="{DynamicResource PageBrush}" CornerRadius="8" Padding="16" Margin="0,0,0,16"><Image x:Name="LabelImage" Height="200" Stretch="Uniform"/></Border>
+          <WrapPanel><StackPanel Margin="0,0,24,0"><TextBlock Text="匹配阈值（%）" Style="{StaticResource Caption}"/><TextBox x:Name="LabelThreshold" Text="90" Width="100" HorizontalAlignment="Left" Margin="0,4,0,0"/></StackPanel><CheckBox x:Name="LabelGrayscale" Content="灰度模板匹配" VerticalAlignment="Bottom" Margin="0,0,0,8"/></WrapPanel>
+          <Border Background="{DynamicResource PageBrush}" CornerRadius="8" Padding="12" Margin="0,16,0,0"><StackPanel><TextBlock x:Name="LabelRegion" Text="搜索区域：全画面" Margin="0,0,0,8"/><Button Content="采用主标签识图区域" Click="AdoptLabelRegionClick" HorizontalAlignment="Left"/><TextBlock Text="在主标签预览画面上框选区域，再应用到此标签。" Style="{StaticResource Caption}" Margin="0,8,0,0"/></StackPanel></Border>
+         </StackPanel></ScrollViewer>
+        </DockPanel>
+        <TextBlock x:Name="LabelEmpty" Text="还没有图像标签&#x0a;&#x0a;先预览画面并框选目标，或加载已有标签与图片。" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="380" Foreground="{DynamicResource MutedBrush}"/>
+       </Grid></Border>
       </Grid>
      </DockPanel>
     </TabItem>
     <TabItem Header="HTTP 动作">
-     <DockPanel Margin="8,20">
-      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,20"><Button DockPanel.Dock="Right" Content="＋ 新建动作" Click="NewHttpClick"/><TextBlock Text="HTTP 动作" FontSize="20" FontWeight="SemiBold"/></DockPanel>
-      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="250"/><ColumnDefinition Width="20"/><ColumnDefinition/></Grid.ColumnDefinitions>
-       <ListBox x:Name="HttpList" DisplayMemberPath="Name" SelectionChanged="HttpSelected"/>
-       <Border Grid.Column="2" Style="{StaticResource Panel}"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel x:Name="HttpDetails"><TextBlock Text="动作名称" Style="{StaticResource Caption}"/><TextBox x:Name="HttpName" Margin="0,4,0,12"/><TextBlock Text="脚本函数名" Style="{StaticResource Caption}"/><TextBox x:Name="HttpFunction" Margin="0,4,0,12"/><DockPanel Margin="0,0,0,12"><Button DockPanel.Dock="Right" Content="修改设备设置" Click="SettingsClick"/><TextBlock x:Name="RobotAddress" Text="尚未设置机器人 IP"/></DockPanel><TextBlock Text="请求步骤 · 按顺序执行" FontWeight="SemiBold" Margin="0,0,0,8"/>
-        <DataGrid x:Name="HttpSteps" AutoGenerateColumns="False" CanUserAddRows="True" CanUserDeleteRows="True" MinHeight="180" MaxHeight="320" HeadersVisibility="Column" SelectionMode="Single"><DataGrid.Columns><DataGridTextColumn Header="方法" Binding="{Binding Method}" Width="70"/><DataGridTextColumn Header="路径" Binding="{Binding Path}" Width="*"/><DataGridTextColumn Header="结束等待 ms" Binding="{Binding WaitAfterMs}" Width="100"/></DataGrid.Columns></DataGrid>
-        <TextBlock Text="选中步骤的请求正文" Style="{StaticResource Caption}" Margin="0,16,0,4"/><TextBox x:Name="HttpBody" Text="{Binding SelectedItem.Body, ElementName=HttpSteps, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" Height="120" VerticalScrollBarVisibility="Auto"/><TextBlock Text="Content-Type" Style="{StaticResource Caption}" Margin="0,12,0,4"/><TextBox Text="{Binding SelectedItem.ContentType, ElementName=HttpSteps, UpdateSourceTrigger=PropertyChanged}"/>
-        <WrapPanel Margin="0,20,0,0"><Button Content="保存并插入主脚本" Style="{StaticResource PrimaryButton}" Click="InsertHttpClick"/><Button Content="保存动作" Click="SaveHttpClick"/><Button Content="执行动作" Click="RunHttpClick"/><Button Content="删除动作" Click="DeleteHttpClick"/></WrapPanel><TextBlock x:Name="HttpResult" Style="{StaticResource Caption}" Margin="0,16"/>
-       </StackPanel></ScrollViewer></Border>
-       <TextBlock x:Name="HttpEmpty" Grid.Column="2" Text="暂无 HTTP 动作。点击“新建动作”配置请求，再通过函数名从主脚本调用。" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="380" Foreground="{DynamicResource MutedBrush}"/>
+     <DockPanel Margin="8,8,8,12">
+      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+       <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><CheckBox x:Name="HttpEditToggle" Content="允许编辑" Style="{StaticResource Switch}" IsChecked="False" Checked="HttpEditingChanged" Unchecked="HttpEditingChanged" Margin="0,0,16,0"/><Button x:Name="NewHttpButton" Content="＋ 新建动作" Click="NewHttpClick" IsEnabled="False" Margin="0"/></StackPanel>
+       <StackPanel><TextBlock Text="HTTP 动作" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="按列表顺序发送请求，也可通过函数名在脚本中调用。" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel>
+      </DockPanel>
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="224"/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+       <Border Style="{StaticResource Panel}" Padding="8"><DockPanel><TextBlock DockPanel.Dock="Top" Text="当前项目的动作" Style="{StaticResource Caption}" Margin="8,8,8,12"/>
+        <ListBox x:Name="HttpList" SelectionChanged="HttpSelected"><ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding FunctionName}" Style="{StaticResource Caption}" FontFamily="Consolas" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox>
+       </DockPanel></Border>
+       <Border Grid.Column="2" Style="{StaticResource Panel}"><Grid>
+        <DockPanel x:Name="HttpDetails">
+         <!-- §2.8 / §3.6: always visible actions; optional payload is secondary. -->
+         <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0">
+          <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="0,12,0,0"><WrapPanel><Button Content="执行动作" Style="{StaticResource PrimaryButton}" Click="RunHttpClick"/><Button x:Name="SaveHttpButton" Content="保存动作" Click="SaveHttpClick"/><Button Content="插入主脚本" Click="InsertHttpClick"/><Button x:Name="DeleteHttpButton" Content="删除动作" Style="{StaticResource QuietButton}" Click="DeleteHttpClick"/></WrapPanel></Border>
+          <TextBlock x:Name="HttpResult" Text="只读模式 · 打开“允许编辑”后可修改动作。" Style="{StaticResource Caption}" Margin="0,8,0,0"/>
+         </StackPanel>
+         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="动作名称" Style="{StaticResource Caption}"/><TextBox x:Name="HttpName" Margin="0,4,0,0" IsReadOnly="True"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="脚本函数名" Style="{StaticResource Caption}"/><TextBox x:Name="HttpFunction" FontFamily="Consolas" Margin="0,4,0,0" IsReadOnly="True"/></StackPanel></Grid>
+          <Border Grid.Row="1" Background="{DynamicResource PageBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,16"><StackPanel><TextBlock Text="直接填写完整 URL，每一步可以请求不同的设备，无需预先保存地址。" Style="{StaticResource Caption}"/><DockPanel Margin="0,4,0,0"><Button DockPanel.Dock="Right" Content="设置" Style="{StaticResource QuietButton}" Click="SettingsClick" Margin="0"/><StackPanel><TextBlock Text="旧的 /路径 写法使用设置中的默认 HTTP 设备：" Style="{StaticResource Caption}"/><TextBlock x:Name="RobotAddress" Text="未设置默认 HTTP 设备" FontFamily="Consolas" FontSize="12"/></StackPanel></DockPanel></StackPanel></Border>
+          <DockPanel Grid.Row="2" Margin="0,0,0,8"><TextBlock Text="请求步骤" FontWeight="SemiBold" DockPanel.Dock="Left" Margin="0,0,16,0"/><WrapPanel HorizontalAlignment="Right"><Button x:Name="AddHttpStepButton" Content="＋ 新增一行" Click="AddHttpStepClick"/><Button x:Name="MoveHttpStepUpButton" Content="↑ 上移" Click="MoveHttpStepUpClick"/><Button x:Name="MoveHttpStepDownButton" Content="↓ 下移" Click="MoveHttpStepDownClick"/><Button x:Name="DeleteHttpStepButton" Content="删除行" Click="DeleteHttpStepClick" Margin="0"/></WrapPanel></DockPanel>
+          <DataGrid Grid.Row="3" x:Name="HttpSteps" MinHeight="160" MaxHeight="280" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserSortColumns="False" CanUserReorderColumns="False" HeadersVisibility="Column" SelectionMode="Single" SelectionUnit="FullRow" SelectionChanged="HttpStepSelected" IsReadOnly="True">
+           <DataGrid.Columns>
+            <DataGridComboBoxColumn Header="方法" SelectedItemBinding="{Binding Method, UpdateSourceTrigger=PropertyChanged}" Width="100"><DataGridComboBoxColumn.ItemsSource><x:Array Type="{x:Type sys:String}" xmlns:sys="clr-namespace:System;assembly=System.Runtime"><sys:String>GET</sys:String><sys:String>POST</sys:String><sys:String>PUT</sys:String><sys:String>PATCH</sys:String><sys:String>DELETE</sys:String><sys:String>HEAD</sys:String></x:Array></DataGridComboBoxColumn.ItemsSource></DataGridComboBoxColumn>
+            <DataGridTextColumn Header="请求地址 / 路径" Binding="{Binding Path, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
+            <DataGridTextColumn Header="结束等待 · ms" Binding="{Binding WaitAfterMs, UpdateSourceTrigger=LostFocus, ValidatesOnExceptions=True}" Width="120"/>
+           </DataGrid.Columns>
+          </DataGrid>
+          <Expander Grid.Row="4" Header="选中步骤的请求正文与 Content-Type（可选）" Margin="0,12,0,0"><ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,8,0,0"><TextBox x:Name="HttpBody" Text="{Binding SelectedItem.Body, ElementName=HttpSteps, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" Height="80" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" IsReadOnly="True"/><TextBlock Text="Content-Type" Style="{StaticResource Caption}" Margin="0,8,0,4"/><TextBox x:Name="HttpContentType" Text="{Binding SelectedItem.ContentType, ElementName=HttpSteps, UpdateSourceTrigger=PropertyChanged}" IsReadOnly="True"/></StackPanel></ScrollViewer></Expander>
+         </Grid></ScrollViewer>
+        </DockPanel>
+        <TextBlock x:Name="HttpEmpty" Text="还没有 HTTP 动作&#x0a;&#x0a;打开右上角“允许编辑”，点击“新建动作”开始。&#x0a;例如：GET http://192.168.1.50/api/cmd?cmd=shortpress" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="400" Foreground="{DynamicResource MutedBrush}"/>
+       </Grid></Border>
       </Grid>
      </DockPanel>
     </TabItem>

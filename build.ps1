@@ -12,7 +12,8 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses') -Destination $appOutput 
 Copy-Item -LiteralPath (Join-Path $repoRoot 'vendor\EasyCon.Script\NOTICE.md') -Destination (Join-Path $appOutput 'licenses\EasyCon-NOTICE.md') -Force
 if (Test-Path -LiteralPath (Join-Path $appOutput 'settings.json')) { throw 'Publish folder contains personal settings. Use a fresh artifacts folder.' }
 if (Test-Path -LiteralPath (Join-Path $appOutput 'projects')) { throw 'Publish folder contains user projects. Use a fresh artifacts folder.' }
-$archive = Join-Path $artifacts 'TextSenderStudio-v0.1.0-win-x64.zip'
+$desktopVersion = ([xml](Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'Directory.Build.props'))).Project.PropertyGroup.Version
+$archive = Join-Path $artifacts "TextSenderStudio-v$desktopVersion-win-x64.zip"
 Compress-Archive -Path (Join-Path $appOutput '*') -DestinationPath $archive -Force
 if ($Firmware) { & (Join-Path $repoRoot 'firmware\build.ps1'); if ($LASTEXITCODE -ne 0) { throw 'Firmware build failed.' } }
 $firmwareOutput = Join-Path $repoRoot 'firmware\binaries'

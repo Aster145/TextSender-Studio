@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using TextSenderStudio.Core;
+using TextSenderStudio.Core.Scripting;
 
 int checks = 0;
 void Check(bool condition, string description)
@@ -70,6 +71,69 @@ try
     settings.SendDelayMs = 0;
     await RejectAsync<FileNotFoundException>(() => actions.LaunchAsync(one.Shortcuts[0], CancellationToken.None), "missing shortcut rejected without launching a process");
 
+    var soundProject = store.Load("项目一");
+    soundProject.Sounds.Add(new() { Name = "完成提示", FunctionName = "sound_notice", Source = "System", SystemSound = "Exclamation" });
+    soundProject.Sounds.Add(new() { Name = "自选音乐", FunctionName = "sound_music", Source = "File", FilePath = "sounds/通知音乐.mp3" });
+    store.Save("项目一", soundProject);
+    var restoredSounds = store.Load("项目一").Sounds;
+    Check(restoredSounds.Count == 2 && restoredSounds[0].SystemSound == "Exclamation" && restoredSounds[1].FilePath == "sounds/通知音乐.mp3", "system and file sound functions persist with project");
+    Check(store.Load("项目二").Sounds.Count == 0, "sound resources remain isolated per project");
+    Check(JsonSerializer.Deserialize<StudioProject>("{\"Name\":\"existing\"}")!.Sounds.Count == 0, "existing project without sounds opens with empty sound collection");
+    foreach (var collision in new[] { "PHRASE_HELLO", "START_TOOLS", "ROBOT_STATUS" })
+    {
+        var soundConflict = ProjectStore.Clone(soundProject); soundConflict.Sounds[0].FunctionName = collision;
+        Reject(() => store.Save("项目一", soundConflict), "sound function cannot shadow another resource: " + collision);
+    }
+    var invalidSound = ProjectStore.Clone(soundProject); invalidSound.Sounds[0].Source = "Unknown";
+    Reject(() => store.Save("项目一", invalidSound), "unknown sound source rejected");
+    invalidSound = ProjectStore.Clone(soundProject); invalidSound.Sounds[0].SystemSound = "Unknown";
+    Reject(() => store.Save("项目一", invalidSound), "unknown system sound preset rejected");
+    invalidSound = ProjectStore.Clone(soundProject); invalidSound.Sounds[1].FilePath = "";
+    Reject(() => store.Save("项目一", invalidSound), "file sound requires selected path");
+    Check(store.Load("项目一").Sounds[0].FunctionName == "sound_notice" && store.Load("项目一").Sounds[1].FilePath.EndsWith(".mp3"), "rejected sound edits preserve saved resources");
+
+    var soundEvents = new List<string>();
+    var playbackStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var playbackFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    SoundAction? playedSound = null;
+    var soundActions = new ProjectActions(settings, soundProject, store.ProjectPath("项目一"), fake,
+        (_, _) => Task.FromResult(0.0), soundEvents.Add, async (sound, token) =>
+        {
+            playedSound = sound; playbackStarted.TrySetResult();
+            await playbackFinished.Task.WaitAsync(token);
+        });
+    var scriptWithSound = new StudioScriptEngine().RunAsync("CALL sound_music\nPRINT after-sound", soundActions, CancellationToken.None);
+    await playbackStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    Check(!scriptWithSound.IsCompleted && soundEvents.Count == 0 && playedSound?.FilePath == "sounds/通知音乐.mp3", "script CALL routes file sound and waits for playback completion");
+    playbackFinished.TrySetResult(); await scriptWithSound;
+    Check(soundEvents.Count == 2 && soundEvents[0] == "声音提醒：自选音乐" && soundEvents[1].Contains("after-sound"), "script continues only after sound callback completes");
+    await soundActions.CallAsync("SOUND_NOTICE", CancellationToken.None);
+    Check(playedSound?.SystemSound == "Exclamation" && playedSound.Source == "System", "sound function dispatch is case-insensitive and preserves preset");
+    var isolatedActions = new ProjectActions(settings, two, store.ProjectPath("项目二"), fake, (_, _) => Task.FromResult(0.0), _ => { });
+    Check(!isolatedActions.FunctionNames.Contains("sound_music") && soundActions.FunctionNames.Contains("sound_music"), "sound completion function list follows current project");
+    await RejectAsync<InvalidOperationException>(() => isolatedActions.CallAsync("sound_music", CancellationToken.None), "another project's sound cannot be invoked");
+    var noAudioHost = new ProjectActions(settings, soundProject, store.ProjectPath("项目一"), fake, (_, _) => Task.FromResult(0.0), _ => { });
+    await RejectAsync<InvalidOperationException>(() => noAudioHost.CallAsync("sound_notice", CancellationToken.None), "missing sound adapter reports unsupported host");
+
+    using (var cancellation = new CancellationTokenSource())
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var interrupted = false;
+        var cancelledEvents = new List<string>();
+        var cancellableSound = new ProjectActions(settings, soundProject, store.ProjectPath("项目一"), fake,
+            (_, _) => Task.FromResult(0.0), cancelledEvents.Add, async (_, token) =>
+            {
+                started.TrySetResult();
+                try { await Task.Delay(Timeout.Infinite, token); }
+                catch (OperationCanceledException) { interrupted = true; throw; }
+            });
+        var script = new StudioScriptEngine().RunAsync("CALL sound_music\nPRINT should-not-run", cancellableSound, cancellation.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5)); cancellation.Cancel();
+        await RejectAsync<OperationCanceledException>(() => script, "script cancellation interrupts fake sound playback");
+        Check(interrupted && cancelledEvents.Count == 0, "cancelled sound never logs completion or runs next instruction");
+    }
+    Check(fake.Texts.Count == 1, "sound calls never send keyboard text to input bridge");
+
     await using (var http = new LoopbackHttp([200, 503]))
     {
         settings.RobotHost = "127.0.0.1"; settings.RobotPort = http.Port;
@@ -82,10 +146,48 @@ try
     await using (var http = new LoopbackHttp([]))
     {
         settings.RobotPort = http.Port;
-        await RejectAsync<ArgumentException>(() => actions.HttpAsync(new HttpAction { Steps = [new() { Path = "//other.invalid/" }] }, CancellationToken.None), "HTTP action cannot replace configured host with URL path");
+        await RejectAsync<ArgumentException>(() => actions.HttpAsync(new HttpAction { Steps = [new() { Path = "//other.invalid/" }] }, CancellationToken.None), "HTTP rejects ambiguous protocol-relative addresses");
         Check(http.Requests.Count == 0, "invalid HTTP path makes no request");
         await RejectAsync<ArgumentException>(() => actions.HttpAsync(new HttpAction { Steps = [new() { Path = "/first" }, new() { Path = "/second", WaitAfterMs = -1 }] }, CancellationToken.None), "invalid later HTTP step is validated before first action");
         Check(http.Requests.Count == 0, "invalid sequence makes no partial HTTP action");
+    }
+
+    await using (var firstDevice = new LoopbackHttp([200, 200, 200, 200]))
+    await using (var secondDevice = new LoopbackHttp([200, 200, 200, 200]))
+    {
+        settings.RobotHost = "";
+        var firstUrl = $"http://127.0.0.1:{firstDevice.Port}";
+        var secondUrl = $"http://127.0.0.1:{secondDevice.Port}";
+        await actions.HttpAsync(new() { Steps = [new() { Path = firstUrl + "/first" }, new() { Path = secondUrl + "/second" }] }, CancellationToken.None);
+        Check(firstDevice.Requests.Single().StartsWith("GET /first ") && secondDevice.Requests.Single().StartsWith("GET /second "), "one HTTP action addresses two devices without any saved default");
+        settings.RobotHost = "127.0.0.1"; settings.RobotPort = firstDevice.Port;
+        await actions.HttpAsync(new() { Steps = [new() { Path = secondUrl + "/override" }] }, CancellationToken.None);
+        Check(secondDevice.Requests.Last().StartsWith("GET /override ") && firstDevice.Requests.Count == 1, "full step URL overrides legacy global default");
+        await actions.HttpAsync(new() { Steps = [new() { Path = "/legacy" }] }, CancellationToken.None);
+        Check(firstDevice.Requests.Last().StartsWith("GET /legacy "), "existing relative-path actions retain configured default device");
+
+        settings.RobotHost = "";
+        var directScript = $"HTTP_GET \"http://localhost:{firstDevice.Port}/script-get\"\nHTTP_POST \"{secondUrl}/script-post\", \"{{\\\"message\\\":\\\"ok\\\"}}\"\nHTTP_REQUEST \"PATCH\", \"{firstUrl}/script-patch\", \"payload\", \"text/plain; charset=utf-8\"\nHTTP_POST \"{secondUrl}/empty-post\", \"\"";
+        await new StudioScriptEngine().RunAsync(directScript, actions, CancellationToken.None);
+        Check(firstDevice.Requests[2].StartsWith("GET /script-get ") && firstDevice.Requests[2].Contains($"Host: localhost:{firstDevice.Port}"), "direct HTTP_GET script accepts hostname and custom port without defaults");
+        Check(secondDevice.Requests[2].StartsWith("POST /script-post ") && secondDevice.Requests[2].Contains("{\"message\":\"ok\"}") && secondDevice.Requests[2].Contains("application/json"), "direct HTTP_POST script sends JSON body to another device");
+        Check(firstDevice.Requests[3].StartsWith("PATCH /script-patch ") && firstDevice.Requests[3].Contains("text/plain; charset=utf-8") && firstDevice.Requests[3].EndsWith("payload"), "HTTP_REQUEST script accepts parameterized content type with selected method and body");
+        Check(secondDevice.Requests[3].StartsWith("POST /empty-post ") && secondDevice.Requests[3].Contains("Content-Length: 0") && secondDevice.Requests[3].Contains("application/json"), "HTTP_POST with empty body retains JSON content type and zero content length");
+    }
+    var secureTarget = HttpRequestAddress.Resolve(new() { Path = "https://device.example:8443/api/state?value=1" }, settings);
+    Check(secureTarget.Scheme == "https" && secureTarget.Host == "device.example" && secureTarget.Port == 8443, "HTTPS hostname URL is accepted independent of default host");
+    foreach (var builtIn in new[] { "HTTP_GET", "HTTP_POST", "HTTP_REQUEST" })
+    {
+        var conflict = ProjectStore.Clone(one); conflict.Phrases[0].FunctionName = builtIn.ToLowerInvariant();
+        Reject(() => ProjectStore.ValidateFunctions(conflict), "direct HTTP builtin name is reserved: " + builtIn);
+    }
+    await using (var untouched = new LoopbackHttp([]))
+    {
+        foreach (var invalidTarget in new[] { "//other.invalid/path", "ftp://example.com/path", "file:///C:/test", "http:///missing", "http://", "http://example.com:99999/", "/space here", "/path#fragment", " " })
+            await RejectAsync<ArgumentException>(() => actions.HttpAsync(new() { Steps = [new() { Path = $"http://127.0.0.1:{untouched.Port}/valid-first" }, new() { Path = invalidTarget }] }, CancellationToken.None), "malformed later address blocks entire request sequence: " + invalidTarget);
+        Check(untouched.Requests.Count == 0, "malformed full URL never permits first step to execute");
+        await RejectAsync<ArgumentException>(() => actions.HttpAsync(new() { Steps = [new() { Path = "/missing-default" }] }, CancellationToken.None), "relative path without old default reports missing address");
+        await RejectAsync<ArgumentException>(() => actions.RequestHttpAsync("GET", "/relative", "", "application/json", CancellationToken.None), "direct script HTTP API requires complete URL");
     }
 
     int dispatches = 0, executed = 0;

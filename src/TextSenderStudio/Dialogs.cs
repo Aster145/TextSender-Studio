@@ -9,10 +9,10 @@ namespace TextSenderStudio;
 
 internal static class Dialogs
 {
-    public static Window Window(Window owner, string title, double width = 520) => new() { Owner = owner, Title = title, Width = width, SizeToContent = SizeToContent.Height, MaxHeight = Math.Max(600, SystemParameters.WorkArea.Height - 80), WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false, ResizeMode = ResizeMode.CanResize, Topmost = owner.Topmost };
+    public static Window Window(Window owner, string title, double width = 520) => new() { Style = (Style)Application.Current.FindResource(typeof(Window)), Owner = owner, Title = title, Width = width, SizeToContent = SizeToContent.Height, MaxHeight = SystemParameters.WorkArea.Height - 48, WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false, ResizeMode = ResizeMode.CanResize, Topmost = owner.Topmost };
     public static TextBox Field(Panel parent, string label, string value, bool multiline = false)
     {
-        parent.Children.Add(new TextBlock { Text = label, Margin = new(0, 0, 0, 4) });
+        parent.Children.Add(new TextBlock { Text = label, Style = (Style)Application.Current.FindResource("Caption"), Margin = new(0, 0, 0, 4) });
         var field = new TextBox { Text = value, Margin = new(0, 0, 0, 16), AcceptsReturn = multiline, TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         if (multiline) field.Height = 110; parent.Children.Add(field); return field;
     }
@@ -46,13 +46,24 @@ internal sealed class SettingsWindow : Window
     public SettingsWindow(Window owner, AppSettings source, Func<AppSettings, string, string, Task> configureWifi)
     {
         Style = (Style)Application.Current.FindResource(typeof(Window));
-        Result = ProjectStore.Clone(source); Title = "设置"; Owner = owner; Width = 620; Height = 790; MinHeight = 600; WindowStartupLocation = WindowStartupLocation.CenterOwner; ShowInTaskbar = false; Topmost = owner.Topmost;
-        var panel = new StackPanel { Margin = new(24) }; Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        panel.Children.Add(new TextBlock { Text = "全局设置 · 切换项目时保持不变", Margin = new(0, 0, 0, 24) });
-        var manual = new CheckBox { Content = "显示手动控制栏（Pro 手柄 / 键盘与文字）", IsChecked = source.ShowManualControls }; panel.Children.Add(manual);
-        var onTop = new CheckBox { Content = "默认窗口置顶", IsChecked = source.AlwaysOnTop, Margin = new(0, 8, 0, 20) }; panel.Children.Add(onTop);
-        var esp = Dialogs.Field(panel, "ESP32-S3 · IP / 主机名", source.EspHost); var espPort = Dialogs.Field(panel, "ESP32 端口", source.EspPort.ToString());
-        var wifi = new WrapPanel { Margin = new(0, 0, 0, 24) }; panel.Children.Add(wifi);
+        Result = ProjectStore.Clone(source); Title = "设置"; Owner = owner; Width = 760; Height = 820; MinWidth = 620; MinHeight = 560; MaxHeight = SystemParameters.WorkArea.Height - 48; WindowStartupLocation = WindowStartupLocation.CenterOwner; ShowInTaskbar = false; Topmost = owner.Topmost;
+        // Refactoring UI §2.1 / §3.6: group related fields; keep the primary save action visible.
+        var root = new DockPanel(); Content = root;
+        var heading = new StackPanel { Margin = new(24, 24, 24, 16) };
+        heading.Children.Add(new TextBlock { Text = "设置", FontSize = 20, FontWeight = FontWeights.SemiBold });
+        heading.Children.Add(new TextBlock { Text = "设备地址与界面偏好在所有项目之间共用。", Style = (Style)Application.Current.FindResource("Caption"), Margin = new(0, 8, 0, 0) });
+        DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
+        var footer = new Border { BorderThickness = new(0, 1, 0, 0), Padding = new(24, 16, 24, 16) };
+        footer.SetResourceReference(Border.BackgroundProperty, "PanelBrush"); footer.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
+        var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right }; footer.Child = actions;
+        DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
+        var panel = new StackPanel { Margin = new(24, 0, 24, 8) }; root.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        var appearance = Section(panel, "界面", "按你的习惯显示控制栏与窗口。");
+        var manual = new CheckBox { Content = "显示手动控制栏（Pro 手柄 / 键盘与文字）", IsChecked = source.ShowManualControls }; appearance.Children.Add(manual);
+        var onTop = new CheckBox { Content = "默认窗口置顶", IsChecked = source.AlwaysOnTop, Margin = new(0, 8, 0, 0) }; appearance.Children.Add(onTop);
+        var espSection = Section(panel, "ESP32-S3", "填写开发板连接路由器后获得的局域网地址。");
+        var (esp, espPort) = AddressFields(espSection, "ESP32-S3 · IP / 主机名", source.EspHost, "ESP32 端口", source.EspPort.ToString());
+        var wifi = new WrapPanel(); espSection.Children.Add(wifi);
         var wifiButton = new Button { Content = "首次 Wi-Fi 配网" }; wifi.Children.Add(wifiButton);
         wifiButton.Click += async (_, _) =>
         {
@@ -65,20 +76,51 @@ internal sealed class SettingsWindow : Window
             catch (Exception error) { Dialogs.Error(this, error); }
             finally { password.Clear(); wifiButton.IsEnabled = true; }
         };
-        var robot = Dialogs.Field(panel, "手指机器人 · IP / 主机名", source.RobotHost); var robotPort = Dialogs.Field(panel, "机器人端口", source.RobotPort.ToString());
-        panel.Children.Add(new TextBlock { Text = "协议", Margin = new(0, 0, 0, 4) }); var protocol = new ComboBox { ItemsSource = new[] { "http", "https" }, SelectedItem = source.RobotScheme, Margin = new(0, 0, 0, 16) }; panel.Children.Add(protocol);
-        var timeout = Dialogs.Field(panel, "HTTP 请求超时（ms）", source.RequestTimeoutMs.ToString());
-        var lanFields = new StackPanel { Margin = new(8, 16, 8, 8) }; var lan = new CheckBox { Content = "启用局域网接口（免验证）", IsChecked = source.LanEnabled }; lanFields.Children.Add(lan);
+        var robotSection = Section(panel, "默认 HTTP 设备", "动作未填写默认地址时使用此设备。每个动作和步骤均可指定其他设备。");
+        var (robot, robotPort) = AddressFields(robotSection, "默认 HTTP 设备 · IP / 主机名", source.RobotHost, "HTTP 默认端口", source.RobotPort.ToString());
+        var networkOptions = new Grid(); networkOptions.ColumnDefinitions.Add(new()); networkOptions.ColumnDefinitions.Add(new() { Width = new GridLength(16) }); networkOptions.ColumnDefinitions.Add(new()); robotSection.Children.Add(networkOptions);
+        var protocolFields = new StackPanel(); networkOptions.Children.Add(protocolFields);
+        protocolFields.Children.Add(new TextBlock { Text = "协议", Style = (Style)Application.Current.FindResource("Caption"), Margin = new(0, 0, 0, 4) }); var protocol = new ComboBox { ItemsSource = new[] { "http", "https" }, SelectedItem = source.RobotScheme, Margin = new(0) }; protocolFields.Children.Add(protocol);
+        var timeoutFields = new StackPanel(); Grid.SetColumn(timeoutFields, 2); networkOptions.Children.Add(timeoutFields);
+        var timeout = Dialogs.Field(timeoutFields, "HTTP 请求超时（ms）", source.RequestTimeoutMs.ToString()); timeout.Margin = new(0);
+        var pushSection = Section(panel, "推送服务", "配置 EasyCon 脚本通知使用的服务与密钥。");
+        var pushSummary = new TextBlock { Style = (Style)Application.Current.FindResource("Caption"), Margin = new(0, 0, 0, 12) }; pushSection.Children.Add(pushSummary);
+        void UpdatePushSummary() => pushSummary.Text = "已启用 " + Result.PushNotifications.Channels.Count(c => c.Enabled) + " 个服务";
+        UpdatePushSummary();
+        var pushButtons = new WrapPanel(); pushSection.Children.Add(pushButtons);
+        Dialogs.Button(pushButtons, "配置推送服务", () =>
+        {
+            var dialog = new PushSettingsWindow(this, Result.PushNotifications);
+            if (dialog.ShowDialog() == true) { Result.PushNotifications = dialog.Result; UpdatePushSummary(); }
+        });
+        var lanFields = new StackPanel { Margin = new(0, 16, 0, 0) }; var lan = new CheckBox { Content = "启用局域网接口（免验证）", IsChecked = source.LanEnabled }; lanFields.Children.Add(lan);
         var addresses = NetworkInterface.GetAllNetworkInterfaces().Where(n => n.OperationalStatus == OperationalStatus.Up).SelectMany(n => n.GetIPProperties().UnicastAddresses).Select(a => a.Address).Where(LanControlServer.IsLocalAddress).Select(a => a.ToString()).Append("127.0.0.1").Append(source.LanBindAddress).Distinct().ToArray();
         lanFields.Children.Add(new TextBlock { Text = "监听 IP（供局域网访问时请选择电脑的局域网 IP）", TextWrapping = TextWrapping.Wrap, Margin = new(0, 12, 0, 4) });
         var address = new ComboBox { ItemsSource = addresses, SelectedItem = source.LanBindAddress, Margin = new(0, 0, 0, 12) }; lanFields.Children.Add(address);
-        var lanPort = Dialogs.Field(lanFields, "本机接口端口", source.LanPort.ToString()); panel.Children.Add(new Expander { Header = "本机局域网接口", Content = lanFields, Margin = new(0, 8, 0, 20) });
-        panel.Children.Add(new TextBlock { Text = "保存在程序目录的 settings.json；Wi-Fi 密码仅写入开发板。", TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 20), FontSize = 12 });
-        var actions = new WrapPanel(); panel.Children.Add(actions); Dialogs.Button(actions, "取消", () => DialogResult = false);
+        var lanPort = Dialogs.Field(lanFields, "本机接口端口", source.LanPort.ToString()); lanPort.Width = 160; lanPort.HorizontalAlignment = HorizontalAlignment.Left; lanPort.Margin = new(0);
+        var lanCard = new Border { Style = (Style)Application.Current.FindResource("Panel"), Margin = new(0, 0, 0, 16), Child = new Expander { Header = "本机局域网接口", Content = lanFields } }; panel.Children.Add(lanCard);
+        panel.Children.Add(new TextBlock { Text = "设置保存在程序目录；Wi-Fi 密码仅写入开发板。", Style = (Style)Application.Current.FindResource("Caption"), Margin = new(0, 0, 0, 16) });
+        var cancel = Dialogs.Button(actions, "取消", () => DialogResult = false); cancel.IsCancel = true;
         Dialogs.Button(actions, "保存设置", () =>
         {
             try { Result.ShowManualControls = manual.IsChecked == true; Result.AlwaysOnTop = onTop.IsChecked == true; Result.EspHost = esp.Text.Trim(); Result.EspPort = int.Parse(espPort.Text); Result.RobotHost = robot.Text.Trim(); Result.RobotPort = int.Parse(robotPort.Text); Result.RobotScheme = (string)protocol.SelectedItem; Result.RequestTimeoutMs = int.Parse(timeout.Text); Result.LanEnabled = lan.IsChecked == true; Result.LanPort = int.Parse(lanPort.Text); Result.LanBindAddress = (string)address.SelectedItem; ProjectStore.ValidateSettings(Result); DialogResult = true; }
             catch (Exception error) { Dialogs.Error(this, error); }
         }, true);
+    }
+
+    private static StackPanel Section(Panel parent, string title, string description)
+    {
+        var content = new StackPanel();
+        var card = new Border { Style = (Style)Application.Current.FindResource("Panel"), Margin = new(0, 0, 0, 16), Child = content }; parent.Children.Add(card);
+        content.Children.Add(new TextBlock { Text = title, FontSize = 16, FontWeight = FontWeights.SemiBold });
+        content.Children.Add(new TextBlock { Text = description, Style = (Style)Application.Current.FindResource("Caption"), Margin = new(0, 4, 0, 16) });
+        return content;
+    }
+
+    private static (TextBox Host, TextBox Port) AddressFields(Panel parent, string hostLabel, string hostValue, string portLabel, string portValue)
+    {
+        var row = new Grid(); row.ColumnDefinitions.Add(new()); row.ColumnDefinitions.Add(new() { Width = new GridLength(16) }); row.ColumnDefinitions.Add(new() { Width = new GridLength(120) }); parent.Children.Add(row);
+        var hostFields = new StackPanel(); row.Children.Add(hostFields); var portFields = new StackPanel(); Grid.SetColumn(portFields, 2); row.Children.Add(portFields);
+        return (Dialogs.Field(hostFields, hostLabel, hostValue), Dialogs.Field(portFields, portLabel, portValue));
     }
 }
