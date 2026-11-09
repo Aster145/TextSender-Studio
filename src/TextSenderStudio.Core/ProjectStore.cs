@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.VisualBasic.FileIO;
+using TextSenderStudio.Core.Scripting;
 
 namespace TextSenderStudio.Core;
 
@@ -62,10 +63,11 @@ public sealed class ProjectStore
     public static void ValidateFunctions(StudioProject project)
     {
         var names = project.Phrases.Select(p => p.FunctionName).Concat(project.Shortcuts.Select(p => p.FunctionName)).Concat(project.HttpActions.Select(p => p.FunctionName)).Concat(project.Sounds.Select(p => p.FunctionName)).ToArray();
-        if (names.Any(n => new[] { "SEND_TEXT", "KEYBOARD", "HTTP_GET", "HTTP_POST", "HTTP_REQUEST" }.Contains(n, StringComparer.OrdinalIgnoreCase))) throw new ArgumentException("SEND_TEXT、KEYBOARD、HTTP_GET、HTTP_POST 和 HTTP_REQUEST 是保留函数名。");
-        foreach (var labels in new[] { project.Phrases.Select(p => p.Name), project.Shortcuts.Select(p => p.Name), project.HttpActions.Select(p => p.Name), project.Labels.Select(p => p.Name), project.Sounds.Select(p => p.Name) })
+        foreach (var name in names) ScriptFunctionNames.Validate(name);
+        // HTTP Name is an optional description; FunctionName is its unique identifier.
+        foreach (var labels in new[] { project.Phrases.Select(p => p.Name), project.Shortcuts.Select(p => p.Name), project.Labels.Select(p => p.Name), project.Sounds.Select(p => p.Name) })
             if (labels.Any(string.IsNullOrWhiteSpace) || labels.Distinct(StringComparer.Ordinal).Count() != labels.Count()) throw new ArgumentException("同类条目的显示名称不能为空或重复。");
-        if (names.Any(n => !Regex.IsMatch(n ?? "", "^[A-Za-z_][A-Za-z0-9_]*$")) || names.Distinct(StringComparer.OrdinalIgnoreCase).Count() != names.Length) throw new ArgumentException("函数名须为不重复的字母、数字或下划线，并且不能以数字开头。");
+        if (names.Distinct(StringComparer.OrdinalIgnoreCase).Count() != names.Length) throw new ArgumentException("同一项目中的函数名不能重复（不区分字母大小写）。");
         foreach (var sound in project.Sounds)
         {
             if (sound.Source is not ("System" or "File")) throw new ArgumentException("声音来源须为系统提示音或音乐文件。");

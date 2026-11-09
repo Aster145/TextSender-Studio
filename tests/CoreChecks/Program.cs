@@ -211,6 +211,7 @@ try
         Check(await RunJson(json) == HttpStatusCode.BadRequest, "LAN parser rejects unsupported data: " + json);
     Check(dispatches == beforeInvalid && executed == 1, "invalid LAN payloads never reach configured action handler");
     lan.Stop(); Check(!lan.IsRunning, "LAN listener stops"); lan.Start(); Check(lan.IsRunning, "LAN listener restarts");
+    await ChineseFunctionChecks.Run(store, Check);
     Console.WriteLine($"Core checks passed: {checks}");
 }
 finally

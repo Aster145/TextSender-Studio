@@ -21,7 +21,7 @@ internal static class HttpEditorChecks
         void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); count++; Console.WriteLine("PASS " + message); }
         T Control<T>(string name) where T : FrameworkElement => (T)window.FindName(name);
         void Click(string method) { typeof(MainWindow).GetMethod(method, Hidden)!.Invoke(window, [window, new RoutedEventArgs()]); Pump(); }
-        var tab = Control<TabControl>("MainTabs"); tab.SelectedIndex = 2; Pump();
+        var tab = Control<TabControl>("MainTabs"); tab.SelectedIndex = 3; Pump();
         var toggle = Control<CheckBox>("HttpEditToggle");
         var grid = Control<DataGrid>("HttpSteps");
         var list = Control<ListBox>("HttpList");
@@ -78,8 +78,8 @@ internal static class HttpEditorChecks
         Click("AddHttpStepClick"); Click("DeleteHttpClick");
         Check(Steps().Count == 1 && list.Items.Count == 2, "locked handlers cannot modify rows or delete actions");
         Click("InsertHttpClick");
-        Check(tab.SelectedIndex == 0 && Control<TextBox>("ScriptEditor").Text.Contains("CALL robot_shortpress"), "locked action can still insert its script function");
-        tab.SelectedIndex = 2; toggle.IsChecked = true; Pump();
+        Check(tab.SelectedIndex == 0 && Control<ScriptEditorBox>("ScriptEditor").Text.Contains("CALL robot_shortpress"), "locked action can still insert its script function");
+        tab.SelectedIndex = 3; toggle.IsChecked = true; Pump();
         list.SelectedItem = another; Pump(); Click("DeleteHttpClick");
         Check(list.Items.Count == 1 && list.SelectedIndex == 0, "delete action selects remaining item");
         Click("DeleteHttpStepClick"); toggle.IsChecked = false; Pump();
@@ -97,6 +97,14 @@ internal static class HttpEditorChecks
         Click("SaveHttpClick");
         var multipleDevices = store.Load(directory).HttpActions[0];
         Check(multipleDevices.Steps[0].Path.StartsWith("http://device-one") && multipleDevices.Steps[1].Path.StartsWith("https://device-two"), "HTTP editor saves different full device URLs without per-action default configuration");
+        Control<TextBox>("HttpFunction").Text = "短按电源";
+        Control<TextBox>("HttpName").Text = "";
+        Click("SaveHttpClick");
+        Check(store.Load(directory).HttpActions[0].FunctionName == "短按电源" && store.Load(directory).HttpActions[0].Name == "", "HTTP editor saves Chinese function name with optional description");
+        Control<TextBox>("HttpName").Text = "按下电源键后检查设备状态";
+        Click("SaveHttpClick");
+        window.UpdateLayout();
+        Check(Control<TextBox>("HttpFunction").TranslatePoint(new Point(), window).Y < Control<TextBox>("HttpName").TranslatePoint(new Point(), window).Y, "HTTP script function field is above description");
         toggle.IsChecked = false; Pump();
         window.UpdateLayout();
         var image = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);

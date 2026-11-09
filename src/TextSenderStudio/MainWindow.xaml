@@ -1,11 +1,14 @@
 <Window x:Class="TextSenderStudio.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:TextSenderStudio" Title="TextSender Studio" Style="{StaticResource {x:Type Window}}" Width="1280" Height="900" MinWidth="1000" MinHeight="720" WindowStartupLocation="CenterScreen" Icon="TextSenderStudio.ico" Closing="WindowClosing">
  <DockPanel>
-  <Border DockPanel.Dock="Top" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="24,12">
+  <Border DockPanel.Dock="Top" Background="{DynamicResource HeaderBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="24,12">
    <StackPanel>
     <DockPanel>
-     <Button DockPanel.Dock="Right" Content="设置" Click="SettingsClick" Margin="0"/>
+     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0"><CheckBox x:Name="TopmostCheck" Content="窗口置顶" Style="{StaticResource Switch}" Checked="TopmostChanged" Unchecked="TopmostChanged" Margin="0,0,16,0"/><Button Content="设置" Click="SettingsClick" Margin="0"/></StackPanel>
+     <StackPanel><TextBlock Text="TextSender Studio" Foreground="#3545B5" FontSize="20" FontWeight="Bold"/><TextBlock x:Name="ProjectLocation" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel>
+    </DockPanel>
+    <DockPanel Margin="0,12,0,0">
+     <Button x:Name="OpenProjectButton" DockPanel.Dock="Right" Content="打开项目目录" Click="OpenProjectFolderClick" Margin="0"/>
      <WrapPanel x:Name="ProjectBar" VerticalAlignment="Center">
-      <TextBlock Text="TextSender Studio" FontSize="20" FontWeight="SemiBold" Margin="0,0,24,0"/>
       <TextBlock Text="项目目录" Style="{StaticResource Caption}" Margin="0,0,8,0"/>
       <ComboBox x:Name="ProjectPicker" Width="220" SelectionChanged="ProjectChanged"/>
       <Button Content="＋ 新增项目" Click="NewProjectClick"/>
@@ -13,28 +16,27 @@
       <Button Content="删除项目" Style="{StaticResource QuietButton}" Click="DeleteProjectClick"/>
      </WrapPanel>
     </DockPanel>
-    <TextBlock x:Name="ProjectLocation" Style="{StaticResource Caption}" Margin="0,8,0,0"/>
    </StackPanel>
   </Border>
   <Border DockPanel.Dock="Bottom" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="24,8"><DockPanel><TextBlock DockPanel.Dock="Right" Text="等待单位 · ms" Style="{StaticResource Caption}"/><StackPanel Orientation="Horizontal"><TextBlock x:Name="ConnectionStatus" Text="ESP32 · 未连接" Style="{StaticResource Caption}" Margin="0,0,24,0"/><TextBlock x:Name="RunStatus" Text="就绪" Style="{StaticResource Caption}"/></StackPanel></DockPanel></Border>
   <Grid>
    <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center"><TextBlock Text="还没有项目" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="新建项目后，脚本、短语和图像标签保存在程序旁的 projects 文件夹。" Margin="0,16"/><Button Content="新增项目" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Center" Click="NewProjectClick"/></StackPanel>
    <TabControl x:Name="MainTabs" Margin="16,8" Visibility="Collapsed">
-    <TabItem Header="主标签">
+    <TabItem Header="主脚本" x:Name="MainScriptTab"><TabItem.Resources><SolidColorBrush x:Key="AccentBrush" Color="#6D28D9"/><SolidColorBrush x:Key="SoftBrush" Color="#F0E9FF"/></TabItem.Resources>
      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <StackPanel Margin="8,8,8,12">
-       <DockPanel Margin="0,0,0,16"><CheckBox x:Name="TopmostCheck" DockPanel.Dock="Right" Content="窗口置顶" Checked="TopmostChanged" Unchecked="TopmostChanged"/><TextBlock Text="输入与脚本" FontSize="20" FontWeight="SemiBold"/></DockPanel>
-       <Border Style="{StaticResource Panel}" Margin="0,0,0,12"><StackPanel><WrapPanel Margin="0,0,0,12"><ComboBox x:Name="TransportPicker" Width="190"><ComboBoxItem Content="Wi-Fi · ESP32-S3" IsSelected="True" Tag="WiFi"/><ComboBoxItem Content="USB 串口" Tag="Serial"/></ComboBox><ComboBox x:Name="SerialPicker" Width="140" Visibility="Collapsed"/><Button Content="连接 / 检查" Click="ConnectClick"/><Button Content="刷新串口" Click="RefreshPortsClick"/><Button Content="键盘直通" Click="PassthroughClick"/><Button Content="目标 Caps Lock" Click="CapsClick"/><Button Content="局域网控制" Click="LanSettingsClick"/></WrapPanel>
-       <Expander Header="发送参数 · 毫秒" Margin="0,0,0,0"><WrapPanel Margin="0,12,0,0"><TextBlock Text="发送前等待" Margin="0,0,8,0"/><TextBox x:Name="SendDelay" Width="76"/><TextBlock Text="ms　逐字间隔" Margin="8,0"/><TextBox x:Name="CharacterDelay" Width="76"/><TextBlock Text="ms　换行等待" Margin="8,0"/><TextBox x:Name="LineDelay" Width="76"/><TextBlock Text="ms" Margin="8,0"/><CheckBox x:Name="ClearIndent" Content="清除自动缩进"/></WrapPanel></Expander></StackPanel></Border>
-       <Border Style="{StaticResource Panel}" Margin="0,0,0,16"><StackPanel><WrapPanel><TextBlock Text="项目资源" Style="{StaticResource Caption}" Margin="0,0,12,0"/><WrapPanel x:Name="PhrasesPanel"/><Button Content="管理短语" Style="{StaticResource QuietButton}" Click="ManagePhrasesClick"/><CheckBox x:Name="PhraseEnter" Content="发送后自动回车" Margin="8,4,24,4"/><WrapPanel x:Name="ShortcutsPanel"/><Button Content="启动脚本" Click="ManageShortcutsClick" Style="{StaticResource QuietButton}"/><Button Content="声音提醒" Click="ManageSoundsClick" Style="{StaticResource QuietButton}"/><Button Content="打开项目目录" Click="OpenProjectFolderClick" Style="{StaticResource QuietButton}"/></WrapPanel></StackPanel></Border>
+       <DockPanel Margin="0,0,0,16"><CheckBox x:Name="ManualControlsCheck" DockPanel.Dock="Right" Content="手动控制" Style="{StaticResource Switch}" Checked="ManualControlsChanged" Unchecked="ManualControlsChanged" ToolTip="显示 Pro 手柄与键盘控制栏；此选择会自动保存。"/><TextBlock Text="主脚本" FontSize="20" FontWeight="SemiBold"/></DockPanel>
+       <Border Style="{StaticResource Panel}" Margin="0,0,0,12"><StackPanel><WrapPanel Margin="0,0,0,12"><ComboBox x:Name="TransportPicker" Width="190"><ComboBoxItem Content="Wi-Fi · ESP32-S3" IsSelected="True" Tag="WiFi"/><ComboBoxItem Content="USB 串口" Tag="Serial"/></ComboBox><ComboBox x:Name="SerialPicker" Width="140" Visibility="Collapsed"/><Button Content="连接 / 检查" Click="ConnectClick"/><Button Content="刷新串口" Click="RefreshPortsClick"/><Button Content="键盘直通" Click="PassthroughClick"/><Button Content="目标 Caps Lock" Click="CapsClick"/><Button Content="局域网控制" Click="LanSettingsClick"/><Button x:Name="ControllerButton" Content="手柄 / 键盘控制" Click="ControllerClick" Style="{StaticResource PrimaryButton}"/><Button x:Name="RecordScriptButton" Content="● 录制脚本" Click="RecordScriptClick"/></WrapPanel>
+       </StackPanel></Border>
+       <Border Style="{StaticResource Panel}" Margin="0,0,0,16"><StackPanel><WrapPanel><TextBlock Text="项目资源" Style="{StaticResource Caption}" Margin="0,0,12,0"/><WrapPanel x:Name="ShortcutsPanel"/><Button Content="启动脚本" Click="ManageShortcutsClick" Style="{StaticResource QuietButton}"/><Button Content="声音提醒" Click="ManageSoundsClick" Style="{StaticResource QuietButton}"/></WrapPanel></StackPanel></Border>
        <local:SyntaxHelpView x:Name="ScriptSyntaxHelp" Editor="{Binding ElementName=ScriptEditor}" Margin="0,0,0,12"/>
        <DockPanel Margin="0,0,0,12">
-        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><Button Content="加载脚本 / 文本" Click="LoadScriptClick"/><Button Content="保存" Click="SaveScriptClick"/><Button x:Name="RunButton" Content="运行脚本" Style="{StaticResource PrimaryButton}" Click="RunClick"/><Button x:Name="StopButton" Content="停止" IsEnabled="False" Click="StopClick"/></StackPanel>
-        <WrapPanel><ComboBox x:Name="EditorMode" Width="160" SelectionChanged="EditorModeChanged"><ComboBoxItem Content="主脚本 · EasyCon" IsSelected="True"/><ComboBoxItem Content="普通文字"/></ComboBox><Button Content="插入函数" Click="InsertFunctionClick"/></WrapPanel>
+        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><Button Content="加载脚本" Click="LoadScriptClick"/><Button Content="保存" Click="SaveScriptClick"/><Button x:Name="RunButton" Content="运行脚本" Style="{StaticResource PrimaryButton}" Click="RunClick"/><Button x:Name="StopButton" Content="停止" IsEnabled="False" Click="StopClick"/></StackPanel>
+        <WrapPanel><Button Content="插入函数" Click="InsertFunctionClick"/><CheckBox x:Name="ShowExecutionPositionCheck" Content="显示执行位置" Style="{StaticResource Switch}" Margin="8,0,0,0" IsChecked="False" Checked="ExecutionPositionChanged" Unchecked="ExecutionPositionChanged" ToolTip="在编辑区高亮正在执行的行，每秒最多刷新 10 次；可以在运行中开关。"/></WrapPanel>
        </DockPanel>
        <Grid>
         <Grid.ColumnDefinitions><ColumnDefinition Width="3*" MinWidth="400"/><ColumnDefinition Width="16"/><ColumnDefinition Width="2*" MinWidth="340"/></Grid.ColumnDefinitions>
-        <Border Style="{StaticResource Panel}"><DockPanel><DockPanel DockPanel.Dock="Top" Margin="0,0,0,12"><TextBlock x:Name="SaveState" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><TextBlock x:Name="ScriptFileName" Text="main.ecs" FontWeight="SemiBold"/></DockPanel><DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0"><TextBlock x:Name="EditorCaretStatus" Text="行 1 · 列 1" Style="{StaticResource Caption}" DockPanel.Dock="Right"/><TextBlock Text="Ctrl+Space 补全 · 双击函数跳转" Style="{StaticResource Caption}"/></DockPanel><local:ScriptEditorBox x:Name="ScriptEditor" Style="{StaticResource {x:Type TextBox}}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="14" AcceptsReturn="True" AcceptsTab="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap" VerticalContentAlignment="Top" Height="460" TextChanged="ScriptChanged"/></DockPanel></Border>
+        <Border Style="{StaticResource Panel}"><DockPanel><DockPanel DockPanel.Dock="Top" Margin="0,0,0,12"><TextBlock x:Name="SaveState" DockPanel.Dock="Right" Style="{StaticResource Caption}"/><StackPanel><TextBlock x:Name="ScriptFileName" Text="main.ecs" FontWeight="SemiBold"/><TextBlock x:Name="ExecutionPositionStatus" Style="{StaticResource Caption}" Visibility="Collapsed" Margin="0,4,0,0"/></StackPanel></DockPanel><DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0"><TextBlock x:Name="EditorCaretStatus" Text="行 1 · 列 1" Style="{StaticResource Caption}" DockPanel.Dock="Right"/><TextBlock Text="Ctrl+S 保存 · Ctrl+Space 补全 · 双击函数跳转" FontSize="11" Foreground="{DynamicResource MutedBrush}"/></DockPanel><Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource PanelBrush}" Padding="0,8"><local:ScriptEditorBox x:Name="ScriptEditor" FontFamily="Consolas, Microsoft YaHei UI" FontSize="14" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Height="460" TextChanged="ScriptChanged" Background="Transparent" Foreground="{DynamicResource TextBrush}"/></Border></DockPanel></Border>
         <Border Grid.Column="2" Style="{StaticResource Panel}"><StackPanel>
          <TextBlock Text="画面与识图" Style="{StaticResource SectionTitle}"/>
          <WrapPanel Margin="0,0,0,12"><ComboBox x:Name="CaptureSource" Width="175" SelectionChanged="CaptureSourceChanged"><ComboBoxItem Content="桌面 / 屏幕选区" Tag="Desktop" IsSelected="True"/><ComboBoxItem Content="采集卡 / 摄像头" Tag="Camera"/></ComboBox><ComboBox x:Name="CameraPicker" Width="160" DisplayMemberPath="Name" SelectedValuePath="Index" Visibility="Collapsed"/><Button Content="刷新设备" Click="RefreshCamerasClick"/><Button x:Name="CaptureButton" Content="开始预览" Click="CaptureClick"/></WrapPanel>
@@ -45,16 +47,66 @@
          <WrapPanel Margin="0,0,0,8"><RadioButton x:Name="FullRegion" Content="全画面" GroupName="Region" IsChecked="True" Margin="0,0,16,0" Checked="RegionModeChanged"/><RadioButton x:Name="CustomRegion" Content="指定区域" GroupName="Region" Checked="RegionModeChanged"/></WrapPanel>
          <UniformGrid Columns="4"><StackPanel Margin="0,0,8,0"><TextBlock Text="X（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiX" Text="0" LostFocus="RoiFieldsChanged"/></StackPanel><StackPanel Margin="0,0,8,0"><TextBlock Text="Y（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiY" Text="0" LostFocus="RoiFieldsChanged"/></StackPanel><StackPanel Margin="0,0,8,0"><TextBlock Text="宽（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiW" Text="1920" LostFocus="RoiFieldsChanged"/></StackPanel><StackPanel><TextBlock Text="高（px）" Style="{StaticResource Caption}"/><TextBox x:Name="RoiH" Text="1080" LostFocus="RoiFieldsChanged"/></StackPanel></UniformGrid>
          <TextBlock x:Name="RegionStatus" Style="{StaticResource Caption}" Margin="0,8,0,12"/>
-         <Button Content="＋ 制作图像标签" HorizontalAlignment="Right" Click="NewLabelClick"/>
+         <Button x:Name="NewImageLabelButton" Content="＋ 制作图像标签" HorizontalAlignment="Right" Click="NewLabelClick"/>
         </StackPanel></Border>
        </Grid>
-       <Border x:Name="ManualPanel" Style="{StaticResource Panel}" Margin="0,16,0,0" Visibility="Collapsed"><StackPanel><TextBlock Text="手动控制 · Pro 手柄 / 键盘与文字" Style="{StaticResource SectionTitle}"/><WrapPanel><Button Content="↑" Tag="UP" Click="ManualPadClick"/><Button Content="↓" Tag="DOWN" Click="ManualPadClick"/><Button Content="←" Tag="LEFT" Click="ManualPadClick"/><Button Content="→" Tag="RIGHT" Click="ManualPadClick"/><Button Content="A" Tag="A" Click="ManualPadClick"/><Button Content="B" Tag="B" Click="ManualPadClick"/><Button Content="X" Tag="X" Click="ManualPadClick"/><Button Content="Y" Tag="Y" Click="ManualPadClick"/><Button Content="L + R" Tag="L+R" Click="ManualPadClick"/><Button Content="HOME" Tag="HOME" Click="ManualPadClick"/><TextBlock Text="按键时长（ms）" Margin="8,0"/><TextBox x:Name="KeyDuration" Text="100" Width="76"/><Button Content="全部释放" Click="ReleaseClick"/></WrapPanel><WrapPanel Margin="0,12,0,0"><TextBox x:Name="ManualText" Width="320"/><Button Content="发送文字" Click="ManualTextClick" Margin="8,0"/><Button Content="Enter" Tag="ENTER" Click="ManualKeyClick"/><Button Content="Esc" Tag="ESC" Click="ManualKeyClick"/></WrapPanel></StackPanel></Border>
+       <!-- Refactoring UI §2.1 / §3.6: primary script action stays above; manual pad groups are secondary.
+            Existing Panel/Page/Line/Text brushes, 4/8/16/24 spacing and 14/16 type keep the hierarchy consistent. -->
+       <Border x:Name="ManualPanel" Style="{StaticResource Panel}" Margin="0,16,0,0" Visibility="Collapsed">
+        <Border.Resources><Style x:Key="PadButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Width" Value="44"/><Setter Property="Height" Value="44"/><Setter Property="Margin" Value="4"/><Setter Property="Padding" Value="0"/><Setter Property="FontSize" Value="16"/><Setter Property="FontWeight" Value="SemiBold"/></Style></Border.Resources>
+        <StackPanel>
+         <DockPanel Margin="0,0,0,16"><WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center"><TextBlock Text="按键时长（ms）" Style="{StaticResource Caption}" Margin="0,0,8,0"/><TextBox x:Name="KeyDuration" Text="100" Width="76" Margin="0,0,16,0"/><Button x:Name="ReleaseAllButton" Content="全部释放" Click="ReleaseClick" Margin="0"/></WrapPanel><StackPanel><TextBlock Text="手动控制" Style="{StaticResource SectionTitle}" Margin="0,0,0,4"/><TextBlock Text="Pro 手柄 · 点击发送一次按键" Style="{StaticResource Caption}"/></StackPanel></DockPanel>
+         <Border Background="{DynamicResource PageBrush}" CornerRadius="8" Padding="16">
+          <Grid x:Name="ControllerLayout" MaxWidth="760" HorizontalAlignment="Stretch">
+           <Grid.ColumnDefinitions><ColumnDefinition Width="156"/><ColumnDefinition Width="*"/><ColumnDefinition Width="156"/></Grid.ColumnDefinitions>
+           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="16"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Content="ZL" Tag="ZL" Width="64" Click="ManualPadClick"/><Button Content="L" Tag="L" Width="64" Click="ManualPadClick" Margin="0"/></StackPanel>
+           <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Center"><Button Content="R" Tag="R" Width="64" Click="ManualPadClick"/><Button Content="ZR" Tag="ZR" Width="64" Click="ManualPadClick" Margin="0"/></StackPanel>
+           <Grid x:Name="DpadLayout" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition Width="52"/><ColumnDefinition Width="52"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="52"/><RowDefinition Height="52"/><RowDefinition Height="52"/></Grid.RowDefinitions>
+            <Button Grid.Column="1" Content="↑" Tag="UP" Style="{StaticResource PadButton}" Click="ManualPadClick" ToolTip="方向键 · 上"/>
+            <Button Content="↖" Tag="UP+LEFT" Style="{StaticResource PadButton}" Click="ManualPadClick" ToolTip="方向键 · 左上"/>
+            <Button Grid.Column="2" Content="↗" Tag="UP+RIGHT" Style="{StaticResource PadButton}" Click="ManualPadClick" ToolTip="方向键 · 右上"/>
+            <Button Grid.Row="1" Content="←" Tag="LEFT" Style="{StaticResource PadButton}" Click="ManualPadClick" ToolTip="方向键 · 左"/>
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="＋" Foreground="{DynamicResource MutedBrush}" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+            <Button Grid.Row="1" Grid.Column="2" Content="→" Tag="RIGHT" Style="{StaticResource PadButton}" Click="ManualPadClick" ToolTip="方向键 · 右"/>
+            <Button Grid.Row="2" Grid.Column="1" Content="↓" Tag="DOWN" Style="{StaticResource PadButton}" Click="ManualPadClick" ToolTip="方向键 · 下"/>
+            <Button Grid.Row="2" Content="↙" Tag="DOWN+LEFT" Style="{StaticResource PadButton}" Click="ManualPadClick" ToolTip="方向键 · 左下"/>
+            <Button Grid.Row="2" Grid.Column="2" Content="↘" Tag="DOWN+RIGHT" Style="{StaticResource PadButton}" Click="ManualPadClick" ToolTip="方向键 · 右下"/>
+           </Grid>
+           <StackPanel Grid.Column="1" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12"><Button Content="−" Tag="MINUS" Style="{StaticResource PadButton}" Click="ManualPadClick" ToolTip="减号键"/><Button Content="＋" Tag="PLUS" Style="{StaticResource PadButton}" Click="ManualPadClick" ToolTip="加号键"/></StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12"><Button Content="截图" Tag="CAPTURE" Click="ManualPadClick"/><Button Content="HOME" Tag="HOME" Click="ManualPadClick" Margin="0"/></StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Content="左摇杆按下" Tag="L3" Click="ManualPadClick"/><Button Content="L + R" Tag="L+R" Click="ManualPadClick"/><Button Content="右摇杆按下" Tag="R3" Click="ManualPadClick" Margin="0"/></StackPanel>
+           </StackPanel>
+           <Grid x:Name="FaceButtonsLayout" Grid.Column="2" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition Width="52"/><ColumnDefinition Width="52"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="52"/><RowDefinition Height="52"/><RowDefinition Height="52"/></Grid.RowDefinitions>
+            <Button Grid.Column="1" Content="X" Tag="X" Background="#DBEAFE" Foreground="#1D4ED8" Style="{StaticResource PadButton}" Click="ManualPadClick"/>
+            <Button Grid.Row="1" Content="Y" Tag="Y" Background="#FEF3C7" Foreground="#92400E" Style="{StaticResource PadButton}" Click="ManualPadClick"/>
+            <Button Grid.Row="1" Grid.Column="2" Content="A" Tag="A" Background="#DCFCE7" Foreground="#166534" Style="{StaticResource PadButton}" Click="ManualPadClick"/>
+            <Button Grid.Row="2" Grid.Column="1" Content="B" Tag="B" Background="#FEE2E2" Foreground="#B91C1C" Style="{StaticResource PadButton}" Click="ManualPadClick"/>
+           </Grid>
+          </Grid>
+         </Border>
+         <WrapPanel Margin="0,16,0,0"><TextBlock Text="键盘与文字" Style="{StaticResource Caption}" Margin="0,0,16,0"/><TextBox x:Name="ManualText" Width="320"/><Button Content="发送文字" Click="ManualTextClick" Margin="8,0,16,0"/><Button Content="Enter" Tag="ENTER" Click="ManualKeyClick"/><Button Content="Esc" Tag="ESC" Click="ManualKeyClick"/></WrapPanel>
+        </StackPanel>
+       </Border>
        <Border Style="{StaticResource Panel}" Margin="0,16,0,0"><DockPanel><TextBlock Text="执行日志" Style="{StaticResource SectionTitle}" DockPanel.Dock="Top"/><TextBox x:Name="LogBox" FontFamily="Consolas, Microsoft YaHei UI" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Height="130" VerticalScrollBarVisibility="Auto" BorderThickness="0"/></DockPanel></Border>
       </StackPanel>
      </ScrollViewer>
     </TabItem>
-    <TabItem Header="图像标签">
+    <TabItem Header="发送文字" x:Name="TextSendTab"><TabItem.Resources><SolidColorBrush x:Key="AccentBrush" Color="#1D4ED8"/><SolidColorBrush x:Key="SoftBrush" Color="#E8F0FF"/></TabItem.Resources>
      <DockPanel Margin="8,8,8,12">
+       <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16"><StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><Button Content="连接 / 检查" Click="ConnectClick"/><Button Content="键盘直通" Click="PassthroughClick"/><Button Content="目标 Caps Lock" Click="CapsClick" Margin="0"/></StackPanel><StackPanel><TextBlock Text="发送文字" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="向目标设备输入普通文字；草稿随项目独立保存。" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></DockPanel>
+       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="3*" MinWidth="440"/><ColumnDefinition Width="16"/><ColumnDefinition Width="2*" MinWidth="300"/></Grid.ColumnDefinitions><Border Style="{StaticResource Panel}"><DockPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12"><TextBlock x:Name="TextSaveState" Style="{StaticResource Caption}" DockPanel.Dock="Right"/><TextBlock Text="draft.txt" FontWeight="SemiBold"/></DockPanel>
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0"><WrapPanel><Button Content="加载文本" Click="LoadTextClick"/><Button Content="保存文本" Click="SaveTextClick"/><Button x:Name="SendTextButton" Content="发送文字" Style="{StaticResource PrimaryButton}" Click="SendTextClick"/><Button x:Name="StopTextButton" Content="停止" IsEnabled="False" Click="StopClick"/></WrapPanel><TextBlock Text="Ctrl+S 保存原文，保留空格和换行。发送参数中的 0 表示不增加等待。" Style="{StaticResource Caption}" Margin="0,8,0,0"/></StackPanel>
+        <TextBox x:Name="TextSendEditor" AcceptsReturn="True" AcceptsTab="True" MinHeight="100" VerticalContentAlignment="Top" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Consolas, Microsoft YaHei UI" TextChanged="TextSendChanged"/>
+       </DockPanel></Border><ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel><Border Style="{StaticResource Panel}" Margin="0,0,0,16"><Expander Header="发送参数 · 毫秒" Margin="0,0,0,0"><WrapPanel Margin="0,12,0,0"><TextBlock Text="发送前等待" Margin="0,0,8,0"/><TextBox x:Name="SendDelay" Width="76"/><TextBlock Text="ms　逐字间隔" Margin="8,0"/><TextBox x:Name="CharacterDelay" Width="76"/><TextBlock Text="ms　换行等待" Margin="8,0"/><TextBox x:Name="LineDelay" Width="76"/><TextBlock Text="ms" Margin="8,0"/><CheckBox x:Name="ClearIndent" Content="清除自动缩进"/></WrapPanel></Expander></Border><Border Style="{StaticResource Panel}" Margin="0,0,0,16"><StackPanel><TextBlock Text="常用短语" Style="{StaticResource SectionTitle}"/><WrapPanel><WrapPanel x:Name="PhrasesPanel"/><Button Content="管理短语" Style="{StaticResource QuietButton}" Click="ManagePhrasesClick"/><CheckBox x:Name="PhraseEnter" Content="发送后自动回车" Margin="8,4,24,4"/></WrapPanel></StackPanel></Border></StackPanel></ScrollViewer></Grid>
+     </DockPanel>
+    </TabItem>
+    <TabItem Header="图像标签" x:Name="ImageLabelsTab"><TabItem.Resources><SolidColorBrush x:Key="AccentBrush" Color="#0F766E"/><SolidColorBrush x:Key="SoftBrush" Color="#DEF7F1"/></TabItem.Resources>
+     <DockPanel x:Name="ImageLabelWorkspace" Margin="8,8,8,12">
       <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16"><WrapPanel DockPanel.Dock="Right"><Button Content="插入主脚本" Click="InsertLabelClick"/><Button Content="加载标签" Click="ImportLabelClick"/><Button Content="＋ 制作标签" Style="{StaticResource PrimaryButton}" Click="NewLabelClick" Margin="0"/></WrapPanel><StackPanel><TextBlock Text="图像标签" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="保存目标图片与识别区域，供脚本判断画面。" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></DockPanel>
       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="224"/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
        <Border Style="{StaticResource Panel}" Padding="8"><DockPanel><TextBlock DockPanel.Dock="Top" Text="当前项目的标签" Style="{StaticResource Caption}" Margin="8,8,8,12"/><ListBox x:Name="LabelsList" DisplayMemberPath="Name" SelectionChanged="LabelSelected"/></DockPanel></Border>
@@ -73,7 +125,7 @@
       </Grid>
      </DockPanel>
     </TabItem>
-    <TabItem Header="HTTP 动作">
+    <TabItem Header="HTTP 动作" x:Name="HttpActionsTab"><TabItem.Resources><SolidColorBrush x:Key="AccentBrush" Color="#B45309"/><SolidColorBrush x:Key="SoftBrush" Color="#FFF1DC"/></TabItem.Resources>
      <DockPanel Margin="8,8,8,12">
       <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16">
        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><CheckBox x:Name="HttpEditToggle" Content="允许编辑" Style="{StaticResource Switch}" IsChecked="False" Checked="HttpEditingChanged" Unchecked="HttpEditingChanged" Margin="0,0,16,0"/><Button x:Name="NewHttpButton" Content="＋ 新建动作" Click="NewHttpClick" IsEnabled="False" Margin="0"/></StackPanel>
@@ -81,7 +133,7 @@
       </DockPanel>
       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="224"/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
        <Border Style="{StaticResource Panel}" Padding="8"><DockPanel><TextBlock DockPanel.Dock="Top" Text="当前项目的动作" Style="{StaticResource Caption}" Margin="8,8,8,12"/>
-        <ListBox x:Name="HttpList" SelectionChanged="HttpSelected"><ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding FunctionName}" Style="{StaticResource Caption}" FontFamily="Consolas" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox>
+        <ListBox x:Name="HttpList" SelectionChanged="HttpSelected" MouseDoubleClick="HttpActionDoubleClick" ToolTip="双击动作执行"><ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding FunctionName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Name}" Style="{StaticResource Caption}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox>
        </DockPanel></Border>
        <Border Grid.Column="2" Style="{StaticResource Panel}"><Grid>
         <DockPanel x:Name="HttpDetails">
@@ -92,7 +144,7 @@
          </StackPanel>
          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><Grid>
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="动作名称" Style="{StaticResource Caption}"/><TextBox x:Name="HttpName" Margin="0,4,0,0" IsReadOnly="True"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="脚本函数名" Style="{StaticResource Caption}"/><TextBox x:Name="HttpFunction" FontFamily="Consolas" Margin="0,4,0,0" IsReadOnly="True"/></StackPanel></Grid>
+          <StackPanel Margin="0,0,0,16"><TextBlock Text="脚本函数名" Style="{StaticResource Caption}"/><TextBox x:Name="HttpFunction" FontFamily="Consolas, Microsoft YaHei UI" Margin="0,4,0,4" IsReadOnly="True"/><TextBlock Text="支持中文，例如：短按电源。主脚本用 CALL 短按电源 调用。" Style="{StaticResource Caption}"/><TextBlock Text="说明（可选）" Style="{StaticResource Caption}" Margin="0,12,0,0"/><TextBox x:Name="HttpName" Margin="0,4,0,0" IsReadOnly="True"/></StackPanel>
           <Border Grid.Row="1" Background="{DynamicResource PageBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,0,16"><StackPanel><TextBlock Text="直接填写完整 URL，每一步可以请求不同的设备，无需预先保存地址。" Style="{StaticResource Caption}"/><DockPanel Margin="0,4,0,0"><Button DockPanel.Dock="Right" Content="设置" Style="{StaticResource QuietButton}" Click="SettingsClick" Margin="0"/><StackPanel><TextBlock Text="旧的 /路径 写法使用设置中的默认 HTTP 设备：" Style="{StaticResource Caption}"/><TextBlock x:Name="RobotAddress" Text="未设置默认 HTTP 设备" FontFamily="Consolas" FontSize="12"/></StackPanel></DockPanel></StackPanel></Border>
           <DockPanel Grid.Row="2" Margin="0,0,0,8"><TextBlock Text="请求步骤" FontWeight="SemiBold" DockPanel.Dock="Left" Margin="0,0,16,0"/><WrapPanel HorizontalAlignment="Right"><Button x:Name="AddHttpStepButton" Content="＋ 新增一行" Click="AddHttpStepClick"/><Button x:Name="MoveHttpStepUpButton" Content="↑ 上移" Click="MoveHttpStepUpClick"/><Button x:Name="MoveHttpStepDownButton" Content="↓ 下移" Click="MoveHttpStepDownClick"/><Button x:Name="DeleteHttpStepButton" Content="删除行" Click="DeleteHttpStepClick" Margin="0"/></WrapPanel></DockPanel>
           <DataGrid Grid.Row="3" x:Name="HttpSteps" MinHeight="160" MaxHeight="280" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserSortColumns="False" CanUserReorderColumns="False" HeadersVisibility="Column" SelectionMode="Single" SelectionUnit="FullRow" SelectionChanged="HttpStepSelected" IsReadOnly="True">

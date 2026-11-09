@@ -8,10 +8,8 @@ internal static class ScriptEditorChecks
     public static void Run(MainWindow main, Action<bool, string> check)
     {
         var editor = (ScriptEditorBox)main.FindName("ScriptEditor");
-        var mode = (ComboBox)main.FindName("EditorMode");
         ((TabControl)main.FindName("MainTabs")).SelectedIndex = 0;
         main.UpdateLayout();
-        mode.SelectedIndex = 0;
         string before = editor.Text;
         var resourcesBefore = editor.ResourceCompletions;
         var navigateBefore = editor.NavigateResource;
@@ -35,6 +33,11 @@ internal static class ScriptEditorChecks
             check(EditorSyntax.Complete("# CALL ph", 9, editor.ResourceCompletions).Count == 0 && EditorSyntax.Complete("SEND_TEXT \"ph", 13, editor.ResourceCompletions).Count == 0, "completion does not alter comments or strings");
             editor.Text = "IF 1 == 1"; editor.CaretIndex = editor.Text.Length; editor.InsertIndentedNewLine();
             check(editor.Text.Replace("\r\n", "\n") == "IF 1 == 1\n    ", "Enter indents new conditional block");
+            editor.Text = "WAIT 500"; editor.Select(5, 3); editor.InsertIndentedNewLine();
+            check(editor.Text.Replace("\r\n", "\n") == "WAIT \n", "Enter replaces selected text instead of retaining it");
+            editor.Undo(); check(editor.Text == "WAIT 500", "Enter selection replacement is one undo operation");
+            editor.Text = "PRINT 'one'\nPRINT 'two'"; editor.Select(6, editor.Text.Length - 6); editor.InsertIndentedNewLine();
+            check(editor.Text.Replace("\r\n", "\n") == "PRINT \n", "Enter removes a selection spanning multiple source lines");
             editor.Text = "IF 1 == 1\n    PRINT ready\n    ENDIF"; editor.CaretIndex = editor.Text.Length; editor.InsertIndentedNewLine();
             check(editor.Text.Replace("\r\n", "\n").EndsWith("\nENDIF\n"), "closing block aligns to matching opening block");
             editor.Text = "IF 1 == 1\n    IF 1 == 1\n        PRINT nested\n    ENDIF\n    ELSE"; editor.CaretIndex = editor.Text.Length; editor.InsertIndentedNewLine();
@@ -44,6 +47,30 @@ internal static class ScriptEditorChecks
             editor.IndentSelection(true); check(editor.Text == "A 100\nWAIT 10\nB 100", "Shift+Tab restores selected line indentation");
             editor.Text = "FUNC greet()\n    PRINT hello\nENDFUNC\nCALL greet";
             check(editor.NavigateAt(editor.Text.LastIndexOf("greet", StringComparison.Ordinal)) && editor.SelectionStart == 5 && editor.SelectedText == "greet", "function navigation selects local FUNC definition");
+            editor.Text = "FUNC 提醒_一次()\n    PRINT 中文函数\nENDFUNC\nCALL 提醒_一次";
+            check(editor.NavigateAt(editor.Text.LastIndexOf("提醒_一次", StringComparison.Ordinal)) && editor.SelectionStart == 5 && editor.SelectedText == "提醒_一次", "Chinese function navigation selects exact definition");
+            editor.Text = "FUNC 提醒_一次()\n    PRINT 就绪\nENDFUNC\nCALL 提醒"; editor.CaretIndex = editor.Text.Length;
+            editor.ShowCompletion();
+            check(editor.VisibleCompletions.Any(c => c.Text == "提醒_一次"), "Chinese local function appears in CALL completion");
+            editor.AcceptCompletion();
+            check(editor.Text.EndsWith("CALL 提醒_一次"), "Chinese function completion inserts full name");
+
+            editor.Text = "# IF ignored\nFUNC 提醒()\n    IF $次数 > 2\n        SEND_TEXT \"FOR 3 # 字符串\"\n    ENDIF\nENDFUNC\nCALL 提醒";
+            editor.RefreshStructure(); main.UpdateLayout();
+            check(editor.Foldings.Count == 2, "folding detects nested actual blocks, ignores comment and string keywords");
+            string fullSource = editor.Text;
+            editor.Foldings[0].IsFolded = true;
+            check(editor.Text == fullSource && editor.Foldings[0].IsFolded, "folding changes only display and retains complete source");
+            editor.ShowExecutionLine(4, false);
+            check(!editor.Foldings[0].IsFolded && editor.ExecutionLine == 4, "execution marker expands the containing folded block");
+            editor.ClearExecutionLine();
+            var kinds = editor.HighlightSpans.Select(s => s.Kind).ToHashSet();
+            check(new[] { ScriptHighlightKind.Keyword, ScriptHighlightKind.Function, ScriptHighlightKind.String, ScriptHighlightKind.Comment, ScriptHighlightKind.Variable, ScriptHighlightKind.Number }.All(kinds.Contains), "syntax colors distinguish keywords, functions, strings, comments, variables and numbers");
+            int quotedFor = editor.Text.IndexOf("FOR 3", StringComparison.Ordinal);
+            check(editor.HighlightSpans.Single(s => s.Start <= quotedFor && s.End > quotedFor).Kind == ScriptHighlightKind.String, "quoted block keywords retain string highlighting");
+            editor.ScriptMode = false;
+            check(editor.Foldings.Count == 0 && editor.HighlightSpans.Count == 0, "plain-text mode removes folding and syntax highlighting");
+            editor.ScriptMode = true;
             string? navigation = null; editor.NavigateResource = name => { navigation = name; return true; };
             editor.Text = "CALL robot_shortpress";
             check(editor.NavigateAt(editor.Text.IndexOf("robot_shortpress", StringComparison.Ordinal)) && navigation == "robot_shortpress", "resource function navigation dispatches exact function name");

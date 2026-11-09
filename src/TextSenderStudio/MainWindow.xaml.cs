@@ -30,7 +30,6 @@ public partial class MainWindow : Window
     private TaskCompletionSource? _operationFinished;
     private int _lanGeneration;
     private bool _initializing = true, _captureActive, _captureChanging, _framePending, _closing, _closed;
-    private int _mode;
     private string _scriptBuffer = "", _textBuffer = "";
     private ImageLabel? _selectedLabel;
     private HttpAction? _selectedHttp;
@@ -39,7 +38,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         _store = new(App.DataRoot); _settings = _store.LoadSettings(); ProjectStore.ValidateSettings(_settings);
-        InitializeComponent(); InitializeScriptEditor(); _bridge = CreateBridge();
+        InitializeComponent(); InitializeScriptEditor(); InitializeExecutionPosition(); _bridge = CreateBridge();
         TransportPicker.SelectionChanged += (_, _) => { if (_initializing) return; SerialPicker.Visibility = TransportPicker.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed; };
         _capture.FrameReady += frame =>
         {
@@ -63,7 +62,8 @@ public partial class MainWindow : Window
     private void ApplySettings()
     {
         Topmost = _settings.AlwaysOnTop; TopmostCheck.IsChecked = _settings.AlwaysOnTop;
-        ManualPanel.Visibility = _settings.ShowManualControls ? Visibility.Visible : Visibility.Collapsed;
+        ShowExecutionPositionCheck.IsChecked = _settings.ShowExecutionPosition;
+        SyncManualControls();
         SendDelay.Text = _settings.SendDelayMs.ToString(); CharacterDelay.Text = _settings.CharacterDelayMs.ToString(); LineDelay.Text = _settings.LineDelayMs.ToString();
         ClearIndent.IsChecked = _settings.ClearAutoIndent; PhraseEnter.IsChecked = _settings.PhraseAutoEnter;
         TransportPicker.SelectedIndex = _settings.Transport == "Serial" ? 1 : 0; SerialPicker.Visibility = TransportPicker.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
@@ -90,7 +90,7 @@ public partial class MainWindow : Window
         {
             _project = _store.Load(directory); _directory = directory; _settings.LastProject = directory; _store.SaveSettings(_settings);
             _scriptBuffer = ReadFile(_store.Resolve(directory, _project.MainScript)); _textBuffer = ReadFile(_store.Resolve(directory, "draft.txt"));
-            ScriptEditor.Text = _mode == 0 ? _scriptBuffer : _textBuffer; ScriptFileName.Text = _mode == 0 ? _project.MainScript : "draft.txt"; SaveState.Text = "已载入";
+            ScriptEditor.Text = _scriptBuffer; TextSendEditor.Text = _textBuffer; ScriptFileName.Text = _project.MainScript; SaveState.Text = TextSaveState.Text = "已载入";
             ProjectLocation.Text = "项目位置：程序目录 / projects/" + directory; ProjectLocation.ToolTip = _store.ProjectPath(directory); MainTabs.Visibility = Visibility.Visible; EmptyState.Visibility = Visibility.Collapsed;
             CaptureSource.SelectedIndex = _project.Capture.Source == "Camera" ? 1 : 0; UpdateCaptureSourceUi(); RefreshResources(); SyncRegion();
         }
@@ -100,10 +100,10 @@ public partial class MainWindow : Window
     private void SaveProject()
     {
         if (_project == null) return; SavePendingHttp(); ReadTiming();
-        if (_mode == 0) _scriptBuffer = ScriptEditor.Text; else _textBuffer = ScriptEditor.Text;
+        _scriptBuffer = ScriptEditor.Text; _textBuffer = TextSendEditor.Text;
         File.WriteAllText(_store.Resolve(_directory, _project.MainScript), _scriptBuffer, new UTF8Encoding(false));
         File.WriteAllText(_store.Resolve(_directory, "draft.txt"), _textBuffer, new UTF8Encoding(false));
-        _store.Save(_directory, _project); SaveState.Text = "已保存";
+        _store.Save(_directory, _project); SaveState.Text = TextSaveState.Text = "已保存";
     }
     private void RefreshResources()
     {
@@ -170,6 +170,7 @@ public partial class MainWindow : Window
     {
         if (_operation != null) { Log("已有操作正在执行，请先停止。"); return; }
         using var cancellation = new CancellationTokenSource(); _operation = cancellation; _operationFinished = new(TaskCreationOptions.RunContinuationsAsynchronously); ProjectBar.IsEnabled = false; RunButton.IsEnabled = false; StopButton.IsEnabled = true; RunStatus.Text = "执行中";
+        UpdateResourceEditingState();
         try { await work(cancellation.Token); RunStatus.Text = "已完成"; }
         catch (OperationCanceledException) { RunStatus.Text = "已停止"; Log("操作已停止。"); }
         catch (Exception error) { RunStatus.Text = "执行失败"; Log(error.Message); }
@@ -177,8 +178,17 @@ public partial class MainWindow : Window
         {
             if (releaseInput) { try { using var limit = new CancellationTokenSource(2500); await _bridge.ReleaseAllAsync(limit.Token); } catch (Exception error) { Log("释放输入：" + error.Message); } }
             _operation = null; ProjectBar.IsEnabled = true; RunButton.IsEnabled = true; StopButton.IsEnabled = false;
+            UpdateResourceEditingState();
             _operationFinished.TrySetResult();
         }
+    }
+    private void UpdateResourceEditingState()
+    {
+        ImageLabelWorkspace.IsEnabled = _operation == null;
+        NewImageLabelButton.IsEnabled = _operation == null;
+        SendTextButton.IsEnabled = _operation == null;
+        StopTextButton.IsEnabled = _operation != null;
+        UpdateHttpEditingUi();
     }
     private async Task RunAction(string function, bool input)
     {
@@ -188,26 +198,19 @@ public partial class MainWindow : Window
     private async void RunClick(object sender, RoutedEventArgs e)
     {
         if (_project == null) return;
-        try { SaveProject(); var code = ScriptEditor.Text; var actions = Actions(ProjectStore.Clone(_project)); await RunOperation(ct => _mode == 0 ? _engine.RunAsync(code, actions, ct) : actions.TypeAsync(code, ct), true); } catch (Exception error) { Dialogs.Error(this, error); }
+        try { SaveProject(); var code = ScriptEditor.Text; var actions = Actions(ProjectStore.Clone(_project)); await RunOperation(ct => RunScriptWithPositionAsync(code, actions, ct), true); } catch (Exception error) { Dialogs.Error(this, error); }
     }
     private void StopClick(object sender, RoutedEventArgs e) => _operation?.Cancel();
     private async void ReleaseClick(object sender, RoutedEventArgs e) { _operation?.Cancel(); try { await _bridge.ReleaseAllAsync(CancellationToken.None); Log("已释放输入。"); } catch (Exception error) { Log(error.Message); } }
-    private void ScriptChanged(object sender, TextChangedEventArgs e) { if (_initializing) return; SaveState.Text = "未保存"; }
-    private void EditorModeChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_initializing || ScriptEditor == null || _mode == EditorMode.SelectedIndex) return;
-        if (_mode == 0) _scriptBuffer = ScriptEditor.Text; else _textBuffer = ScriptEditor.Text; _mode = EditorMode.SelectedIndex;
-        ScriptEditor.Text = _mode == 0 ? _scriptBuffer : _textBuffer; ScriptFileName.Text = _mode == 0 ? _project?.MainScript ?? "main.ecs" : "draft.txt"; RunButton.Content = _mode == 0 ? "运行脚本" : "发送文字";
-        RefreshEditorContext();
-    }
+    private void ScriptChanged(object? sender, EventArgs e) { if (_initializing) return; SaveState.Text = "未保存"; }
     private void LoadScriptClick(object sender, RoutedEventArgs e)
     {
-        if (_project == null) return; var picker = new OpenFileDialog { Filter = "脚本 / 文本|*.ecs;*.txt;*.bas|所有文件|*.*", InitialDirectory = _store.ProjectPath(_directory) };
+        if (_project == null) return; var picker = new OpenFileDialog { Filter = "EasyCon 脚本|*.ecs|所有文件|*.*", InitialDirectory = _store.ProjectPath(_directory) };
         if (picker.ShowDialog(this) != true) return;
-        try { SaveProject(); if (Path.GetExtension(picker.FileName).Equals(".ecs", StringComparison.OrdinalIgnoreCase)) { _project.MainScript = Path.GetFileName(picker.FileName); EditorMode.SelectedIndex = 0; } else EditorMode.SelectedIndex = 1; ScriptEditor.Text = File.ReadAllText(picker.FileName, Encoding.UTF8); ScriptFileName.Text = _mode == 0 ? _project.MainScript : "draft.txt"; SaveProject(); } catch (Exception error) { Dialogs.Error(this, error); }
+        try { SaveProject(); if (Path.GetExtension(picker.FileName).Equals(".ecs", StringComparison.OrdinalIgnoreCase)) _project.MainScript = Path.GetFileName(picker.FileName); ScriptEditor.Text = File.ReadAllText(picker.FileName, Encoding.UTF8); ScriptFileName.Text = _project.MainScript; SaveProject(); } catch (Exception error) { Dialogs.Error(this, error); }
     }
-    private void SaveScriptClick(object sender, RoutedEventArgs e) { try { SaveProject(); } catch (Exception error) { Dialogs.Error(this, error); } }
-    private void InsertCode(string text) { MainTabs.SelectedIndex = 0; EditorMode.SelectedIndex = 0; ScriptEditor.AppendText("\n" + text + "\n"); ScriptEditor.Focus(); ScriptEditor.CaretIndex = ScriptEditor.Text.Length; }
+    private void SaveScriptClick(object sender, RoutedEventArgs e) { try { ScriptEditor.FormatIndentation(); SaveProject(); } catch (Exception error) { Dialogs.Error(this, error); } }
+    private void InsertCode(string text) { MainTabs.SelectedIndex = 0; ScriptEditor.AppendText("\n" + text + "\n"); ScriptEditor.Focus(); ScriptEditor.CaretIndex = ScriptEditor.Text.Length; }
     private void InsertFunctionClick(object sender, RoutedEventArgs e)
     {
         if (_project == null) return; var names = Actions(_project).FunctionNames;
@@ -230,7 +233,7 @@ public partial class MainWindow : Window
     private async void PassthroughClick(object sender, RoutedEventArgs e)
     {
         if (_operation != null) return;
-        try { _ = await _bridge.StatusAsync(CancellationToken.None); var dialog = new PassthroughWindow(this, _bridge); dialog.ShowDialog(); } catch (Exception error) { Dialogs.Error(this, error); }
+        try { await RunOperation(async token => { _ = await _bridge.StatusAsync(token); var dialog = new PassthroughWindow(this, _bridge); using var stop = token.Register(() => Dispatcher.BeginInvoke(() => dialog.Close())); dialog.ShowDialog(); }); } catch (Exception error) { Dialogs.Error(this, error); }
     }
     private async void CapsClick(object sender, RoutedEventArgs e) => await RunOperation(ct => _bridge.TapKeyAsync("CAPSLOCK", 100, ct), true);
     private async void ManualPadClick(object sender, RoutedEventArgs e) { try { var ms = NonNegative(KeyDuration.Text); await RunOperation(ct => _bridge.PressPadAsync((string)((Button)sender).Tag, ms, ct), true); } catch (Exception error) { Dialogs.Error(this, error); } }
@@ -286,9 +289,9 @@ public partial class MainWindow : Window
     }
     private void NewLabelClick(object sender, RoutedEventArgs e)
     {
-        if (_project == null) return; var frame = _capture.GetLatestFrame(); if (frame == null) { MessageBox.Show(this, "请先开始画面预览。", "制作标签"); return; }
+        if (_project == null || _operation != null) return; var frame = _capture.GetLatestFrame(); if (frame == null) { MessageBox.Show(this, "请先开始画面预览。", "制作标签"); return; }
         var region = Dialogs.PickRegion(this, frame); if (region == null) return; var name = Dialogs.Prompt(this, "制作标签", "标签名称", "新标签"); if (string.IsNullOrWhiteSpace(name)) return;
-        try { if (_project.Labels.Any(l => l.Name == name)) throw new ArgumentException("标签名称已经存在。"); var label = new ImageLabel { Name = name, ImagePath = "labels/" + Guid.NewGuid().ToString("N") + ".png", SearchRegion = _project.Capture.RecognitionRegion == null ? null : ProjectStore.Clone(_project.Capture.RecognitionRegion) }; ImageTools.Save(ImageTools.Crop(frame, region), _store.Resolve(_directory, label.ImagePath)); _project.Labels.Add(label); _store.Save(_directory, _project); RefreshResources(); MainTabs.SelectedIndex = 1; LabelsList.SelectedItem = label; } catch (Exception error) { Dialogs.Error(this, error); }
+        try { if (_project.Labels.Any(l => l.Name == name)) throw new ArgumentException("标签名称已经存在。"); var label = new ImageLabel { Name = name, ImagePath = "labels/" + Guid.NewGuid().ToString("N") + ".png", SearchRegion = _project.Capture.RecognitionRegion == null ? null : ProjectStore.Clone(_project.Capture.RecognitionRegion) }; ImageTools.Save(ImageTools.Crop(frame, region), _store.Resolve(_directory, label.ImagePath)); _project.Labels.Add(label); _store.Save(_directory, _project); RefreshResources(); MainTabs.SelectedItem = ImageLabelsTab; LabelsList.SelectedItem = label; } catch (Exception error) { Dialogs.Error(this, error); }
     }
     private void LabelSelected(object sender, SelectionChangedEventArgs e)
     {
@@ -298,19 +301,19 @@ public partial class MainWindow : Window
     }
     private void SaveLabel()
     {
-        if (_project == null || _selectedLabel == null) return; var name = LabelName.Text.Trim(); if (name.Length == 0 || _project.Labels.Any(l => l != _selectedLabel && l.Name == name)) throw new ArgumentException("标签名不能为空或重复。");
+        if (_project == null || _selectedLabel == null || _operation != null) return; var name = LabelName.Text.Trim(); if (name.Length == 0 || _project.Labels.Any(l => l != _selectedLabel && l.Name == name)) throw new ArgumentException("标签名不能为空或重复。");
         if (!double.TryParse(LabelThreshold.Text, out var threshold) || threshold < 0 || threshold > 100) throw new ArgumentException("阈值范围为 0–100。");
         _selectedLabel.Name = name; _selectedLabel.Threshold = threshold / 100; _selectedLabel.Grayscale = LabelGrayscale.IsChecked == true; _store.Save(_directory, _project); LabelsList.Items.Refresh(); LabelResult.Text = "标签已保存。";
     }
     private void SaveLabelClick(object sender, RoutedEventArgs e) { try { SaveLabel(); } catch (Exception error) { Dialogs.Error(this, error); } }
-    private void AdoptLabelRegionClick(object sender, RoutedEventArgs e) { if (_selectedLabel == null || _project == null) return; _selectedLabel.SearchRegion = _project.Capture.RecognitionRegion == null ? null : ProjectStore.Clone(_project.Capture.RecognitionRegion); _store.Save(_directory, _project); LabelRegion.Text = "搜索区域：" + (_selectedLabel.SearchRegion?.ToString() ?? "全画面"); }
+    private void AdoptLabelRegionClick(object sender, RoutedEventArgs e) { if (_selectedLabel == null || _project == null || _operation != null) return; _selectedLabel.SearchRegion = _project.Capture.RecognitionRegion == null ? null : ProjectStore.Clone(_project.Capture.RecognitionRegion); _store.Save(_directory, _project); LabelRegion.Text = "搜索区域：" + (_selectedLabel.SearchRegion?.ToString() ?? "全画面"); }
     private async void TestLabelClick(object sender, RoutedEventArgs e)
     {
         if (_selectedLabel == null) return;
         try { SaveLabel(); var frame = _capture.GetLatestFrame() ?? throw new InvalidOperationException("请先开始画面预览。"); var template = ImageTools.Load(_store.Resolve(_directory, _selectedLabel.ImagePath)); var label = ProjectStore.Clone(_selectedLabel); var result = await Task.Run(() => TemplateMatcher.Match(frame, template, label)); LabelResult.Text = $"匹配度 {result.Score * 100:F1}% · {(result.IsMatch ? "达到阈值" : "未达到阈值")} · {result.Bounds}"; } catch (Exception error) { LabelResult.Text = error.Message; }
     }
     private void InsertLabelClick(object sender, RoutedEventArgs e) { if (_selectedLabel != null) InsertCode("$score = @" + _selectedLabel.Name); }
-    private void DeleteLabelClick(object sender, RoutedEventArgs e) { if (_project == null || _selectedLabel == null) return; _project.Labels.Remove(_selectedLabel); _store.Save(_directory, _project); RefreshResources(); }
+    private void DeleteLabelClick(object sender, RoutedEventArgs e) { if (_project == null || _selectedLabel == null || _operation != null) return; _project.Labels.Remove(_selectedLabel); _store.Save(_directory, _project); RefreshResources(); }
     private sealed record LabelBundle(ImageLabel Label, string PngBase64);
     private void ExportLabelClick(object sender, RoutedEventArgs e)
     {
@@ -319,7 +322,7 @@ public partial class MainWindow : Window
     }
     private void ImportLabelClick(object sender, RoutedEventArgs e)
     {
-        if (_project == null) return; var picker = new OpenFileDialog { Filter = "TextSender 图像标签 / 图片|*.tslabel;*.png;*.jpg;*.bmp" }; if (picker.ShowDialog(this) != true) return;
+        if (_project == null || _operation != null) return; var picker = new OpenFileDialog { Filter = "TextSender 图像标签 / 图片|*.tslabel;*.png;*.jpg;*.bmp" }; if (picker.ShowDialog(this) != true) return;
         try
         {
             ImageLabel label; FrameSnapshot image;

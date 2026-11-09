@@ -280,11 +280,13 @@ public sealed class InputBridge : IInputBridge
     public static (ushort Buttons, byte Dpad) ParsePad(string names)
     {
         ushort mask = 0; bool up = false, down = false, left = false, right = false;
-        var buttons = new Dictionary<string, ushort>(StringComparer.OrdinalIgnoreCase) { ["Y"] = 1, ["B"] = 2, ["A"] = 4, ["X"] = 8, ["L"] = 16, ["R"] = 32, ["ZL"] = 64, ["ZR"] = 128, ["MINUS"] = 256, ["-"] = 256, ["PLUS"] = 512, ["L3"] = 1024, ["R3"] = 2048, ["HOME"] = 4096, ["CAPTURE"] = 8192 };
+        var buttons = new Dictionary<string, ushort>(StringComparer.OrdinalIgnoreCase) { ["Y"] = 1, ["B"] = 2, ["A"] = 4, ["X"] = 8, ["L"] = 16, ["R"] = 32, ["ZL"] = 64, ["ZR"] = 128, ["MINUS"] = 256, ["-"] = 256, ["PLUS"] = 512, ["L3"] = 1024, ["LCLICK"] = 1024, ["R3"] = 2048, ["RCLICK"] = 2048, ["HOME"] = 4096, ["CAPTURE"] = 8192 };
         foreach (string name in names.Split(['+', ',', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             switch (name.ToUpperInvariant())
             {
                 case "UP": up = true; break; case "DOWN": down = true; break; case "LEFT": left = true; break; case "RIGHT": right = true; break;
+                case "UPLEFT": up = left = true; break; case "UPRIGHT": up = right = true; break;
+                case "DOWNLEFT": down = left = true; break; case "DOWNRIGHT": down = right = true; break;
                 default: if (!buttons.TryGetValue(name, out var bit)) throw new ArgumentException("未知手柄按键：" + name); mask |= bit; break;
             }
         int x = (right ? 1 : 0) - (left ? 1 : 0), y = (down ? 1 : 0) - (up ? 1 : 0);

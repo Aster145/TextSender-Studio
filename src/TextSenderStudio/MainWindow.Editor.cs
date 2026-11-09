@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Input;
 
 namespace TextSenderStudio;
 
@@ -6,6 +7,10 @@ public partial class MainWindow
 {
     private void InitializeScriptEditor()
     {
+        CommandBindings.Add(new CommandBinding(ApplicationCommands.Save,
+            (_, e) => { if (TextSendTab.IsSelected) SaveTextClick(this, new RoutedEventArgs()); else SaveScriptClick(this, new RoutedEventArgs()); e.Handled = true; },
+            (_, e) => { e.CanExecute = _project != null && !_closing; e.Handled = true; }));
+        InputBindings.Add(new KeyBinding(ApplicationCommands.Save, Key.S, ModifierKeys.Control));
         ScriptEditor.NavigateResource = NavigateScriptResource;
         ScriptEditor.CaretStatusChanged += (_, _) =>
         {
@@ -17,8 +22,7 @@ public partial class MainWindow
     private void RefreshEditorContext()
     {
         if (ScriptEditor == null) return;
-        ScriptEditor.ScriptMode = _mode == 0;
-        if (FindName("ScriptSyntaxHelp") is FrameworkElement help) help.Visibility = _mode == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ScriptEditor.ScriptMode = true;
         if (_project == null) { ScriptEditor.ResourceCompletions = []; return; }
         ScriptEditor.ResourceCompletions = _project.Phrases.Select(p => new EditorCompletion(p.FunctionName, "短语 · " + p.Name))
             .Concat(_project.Shortcuts.Select(p => new EditorCompletion(p.FunctionName, "启动脚本 · " + p.Name)))
@@ -33,10 +37,10 @@ public partial class MainWindow
         if (name.StartsWith('@'))
         {
             var label = _project.Labels.FirstOrDefault(p => p.Name == name[1..]); if (label == null) return false;
-            MainTabs.SelectedIndex = 1; LabelsList.SelectedItem = label; LabelsList.ScrollIntoView(label); return true;
+            MainTabs.SelectedItem = ImageLabelsTab; LabelsList.SelectedItem = label; LabelsList.ScrollIntoView(label); return true;
         }
         var http = _project.HttpActions.FirstOrDefault(p => p.FunctionName == name);
-        if (http != null) { MainTabs.SelectedIndex = 2; HttpList.SelectedItem = http; HttpList.ScrollIntoView(http); return true; }
+        if (http != null) { MainTabs.SelectedItem = HttpActionsTab; HttpList.SelectedItem = http; HttpList.ScrollIntoView(http); return true; }
         bool phrase = _project.Phrases.Any(p => p.FunctionName == name);
         bool shortcut = _project.Shortcuts.Any(p => p.FunctionName == name);
         bool sound = _project.Sounds.Any(p => p.FunctionName == name);

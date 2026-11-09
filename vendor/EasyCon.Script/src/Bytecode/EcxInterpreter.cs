@@ -45,6 +45,8 @@ public abstract class EcxNativeContext
 
 public sealed class EcxHost
 {
+    /// <summary>Optional sampled desktop execution position; never pauses the VM.</summary>
+    public EcxExecutionPosition? ExecutionPosition { get; set; }
     public EcsCaps Caps { get; set; } = EcsCaps.AllDesktop;
     /// <summary>S-14 行断协议状态（FWRITE/ALERT 尾部 '\' 挂起下一行换行；宿主所有）。</summary>
     public bool PendingBreak;
@@ -596,6 +598,15 @@ public sealed class EcxInterpreter
         return v;
     }
 
+    void CaptureExecutionPosition(int pc)
+    {
+        if (_host.ExecutionPosition is { } position)
+            position.Capture(_frames[^1].Fn.ImageIndex, pc);
+    }
+
+    void CaptureHostPosition(EcsOpcode op) =>
+        CaptureExecutionPosition(_frames[^1].Pc - 1 - EcsFormat.ExtWords(op));
+
     int Step(CancellationToken token)
     {
         _token = token;
@@ -611,6 +622,8 @@ public sealed class EcxInterpreter
         if (_token.IsCancellationRequested)
             return CANCELLED;
 
+        CaptureExecutionPosition(_frames[^1].Pc);
+
         while (true)
         {
             // 取消检查合并：每指令只做预算计数（1 分支）；token 在入口、预算边界与宿主调用后检查
@@ -620,6 +633,7 @@ public sealed class EcxInterpreter
                 _steps = 0;
                 if (_token.IsCancellationRequested)
                     return CANCELLED;
+                CaptureExecutionPosition(_frames[^1].Pc);
                 return YIELD;
             }
 
@@ -711,6 +725,7 @@ public sealed class EcxInterpreter
                         }
                     case EcsOpcode.CallN:
                         {
+                            CaptureExecutionPosition(frame.Pc - 2);
                             uint target = ext;
                             var args = new TaggedValue[b];   // 实参按值快照：原生看不见帧槽
                             for (int i = 0; i < b; i++)
@@ -1022,30 +1037,34 @@ public sealed class EcxInterpreter
                 }
 
             // ---- 域操作（宿主调用：返回取消状态，取消感知点）----
-            case EcsOpcode.WaitI: _host.WaitMs(b | (c << 8)); return _token.IsCancellationRequested;
-            case EcsOpcode.WaitV: _host.WaitMs(R[a].I32); return _token.IsCancellationRequested;
-            case EcsOpcode.KeyI: _host.Key(a, b | (c << 8)); return _token.IsCancellationRequested;
-            case EcsOpcode.KeyV: _host.Key(a, R[b].I32); return _token.IsCancellationRequested;
-            case EcsOpcode.KeySt: _host.KeyState(a, b); return _token.IsCancellationRequested;
-            case EcsOpcode.StickSet: _host.StickSet(a, b, c); return _token.IsCancellationRequested;
+            case EcsOpcode.WaitI: CaptureHostPosition(op); _host.WaitMs(b | (c << 8)); return _token.IsCancellationRequested;
+            case EcsOpcode.WaitV: CaptureHostPosition(op); _host.WaitMs(R[a].I32); return _token.IsCancellationRequested;
+            case EcsOpcode.KeyI: CaptureHostPosition(op); _host.Key(a, b | (c << 8)); return _token.IsCancellationRequested;
+            case EcsOpcode.KeyV: CaptureHostPosition(op); _host.Key(a, R[b].I32); return _token.IsCancellationRequested;
+            case EcsOpcode.KeySt: CaptureHostPosition(op); _host.KeyState(a, b); return _token.IsCancellationRequested;
+            case EcsOpcode.StickSet: CaptureHostPosition(op); _host.StickSet(a, b, c); return _token.IsCancellationRequested;
             case EcsOpcode.StickP:
                 {
+                    CaptureHostPosition(op);
                     _host.StickClick(a, b, c, unchecked((int)ext));
                     return _token.IsCancellationRequested;
                 }
             case EcsOpcode.StickPv:
                 {
+                    CaptureHostPosition(op);
                     _host.StickClick(a, (int)(ext & 0xFF), (int)((ext >> 16) & 0xFF), R[c].I32);
                     return _token.IsCancellationRequested;
                 }
             case EcsOpcode.Img:   // ABx：标签名 = 常量池[Bx]（EcsOpcode.cs 注释为权威）
                 {
+                    CaptureHostPosition(op);
                     var name = _image.Consts[b | (c << 8)].Str ?? "";
                     StoreFresh(ref R[a], TaggedValue.FromInt(_host.ImgLabel(name)));
                     return _token.IsCancellationRequested;
                 }
             case EcsOpcode.Rand:
                 {
+                    CaptureHostPosition(op);
                     var max = R[b].I32;
                     if (max < 0) throw new SimError(ERR_INDEX, "RAND 参数为负");
                     StoreFresh(ref R[a], TaggedValue.FromInt(max == 0 ? 0 : _host.Rand(max)));

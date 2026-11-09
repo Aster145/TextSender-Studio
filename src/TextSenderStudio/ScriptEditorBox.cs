@@ -1,49 +1,69 @@
-using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Folding;
+using ICSharpCode.AvalonEdit.Rendering;
 
 namespace TextSenderStudio;
 
-/// <summary>A plain WPF TextBox with editor aids; preserves native text editing and undo.</summary>
-public sealed class ScriptEditorBox : TextBox
+/// <summary>A document-backed code editor: folding and markers never change source text.</summary>
+public sealed class ScriptEditorBox : TextEditor
 {
     private readonly ListBox _suggestions;
     private readonly Popup _popup;
-    private LineNumbers? _numbers;
+    private readonly ScriptColorizer _colors;
+    private readonly ScriptEditorBackground _background;
+    private readonly ExecutionMargin _executionMargin;
+    private readonly DispatcherTimer _structureTimer;
+    private FoldingManager? _folding;
     private bool _changing, _scriptMode = true;
+    private int _executionLine;
+    private bool _followExecutionLine;
+    public int ExecutionLine => _executionLine;
     public IReadOnlyList<EditorCompletion> ResourceCompletions { get; set; } = [];
     public Func<string, bool>? NavigateResource { get; set; }
     public event EventHandler? CaretStatusChanged;
+    public int CaretIndex { get => CaretOffset; set => CaretOffset = value; }
     public bool ScriptMode
     {
         get => _scriptMode;
-        set { _scriptMode = value; if (!value) CloseCompletion(); }
-    }
-    public string CaretStatus
-    {
-        get
+        set
         {
-            // TextBox line layout can be deferred while its tab is hidden. The status
-            // is a document position, so compute it from the source independently.
-            int caret = Math.Clamp(CaretIndex, 0, Text.Length), line = 1, lineStart = 0;
-            for (int i = 0; i < caret; i++) if (Text[i] == '\n') { line++; lineStart = i + 1; }
-            return $"行 {line} · 列 {caret - lineStart + 1}";
+            if (_scriptMode == value) return;
+            _scriptMode = value;
+            if (!value) { CloseCompletion(); ClearExecutionLine(); }
+            RefreshStructure();
         }
     }
+    public string CaretStatus => $"行 {TextArea.Caret.Line} · 列 {TextArea.Caret.Column}";
     public bool CompletionOpen => _popup.IsOpen;
     public IReadOnlyList<EditorCompletion> VisibleCompletions => _suggestions.Items.Cast<EditorCompletion>().ToArray();
+    public IReadOnlyList<FoldingSection> Foldings => _folding?.AllFoldings.ToArray() ?? [];
+    public IReadOnlyList<ScriptHighlightSpan> HighlightSpans => _colors.Spans;
 
     public ScriptEditorBox()
     {
-        SetResourceReference(StyleProperty, typeof(TextBox));
         FontFamily = new("Consolas, Microsoft YaHei UI"); FontSize = 14;
-        Padding = new(48, 8, 8, 8); AcceptsReturn = true; AcceptsTab = true; TextWrapping = TextWrapping.NoWrap;
+        Padding = new(8); ShowLineNumbers = true;
+        SetResourceReference(BackgroundProperty, "PanelBrush");
+        SetResourceReference(ForegroundProperty, "TextBrush");
+        SetResourceReference(BorderBrushProperty, "LineBrush"); BorderThickness = new(1);
+        SetResourceReference(LineNumbersForegroundProperty, "MutedBrush");
+        Options.IndentationSize = EditorSyntax.IndentSize; Options.ConvertTabsToSpaces = true;
+        Options.EnableHyperlinks = false; Options.EnableEmailHyperlinks = false;
         HorizontalScrollBarVisibility = ScrollBarVisibility.Auto; VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        _colors = new ScriptColorizer();
+        TextArea.TextView.LineTransformers.Add(_colors);
+        _background = new ScriptEditorBackground(this);
+        TextArea.TextView.BackgroundRenderers.Add(_background);
+        _executionMargin = new ExecutionMargin(this);
+        TextArea.LeftMargins.Insert(0, _executionMargin);
+        _structureTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(120) };
+        _structureTimer.Tick += (_, _) => RefreshStructure();
         _suggestions = new ListBox { MaxHeight = 240, MinWidth = 320, MaxWidth = 560, Focusable = false, FontSize = 14 };
         _suggestions.SetResourceReference(BackgroundProperty, "PanelBrush");
         _suggestions.SetResourceReference(ForegroundProperty, "TextBrush");
@@ -55,27 +75,94 @@ public sealed class ScriptEditorBox : TextBox
         var chrome = new Border { Child = _suggestions, BorderThickness = new(1), CornerRadius = new(8), Padding = new(4) };
         chrome.SetResourceReference(BorderBrushProperty, "LineBrush"); chrome.SetResourceReference(BackgroundProperty, "PanelBrush");
         _popup = new Popup { Child = chrome, PlacementTarget = this, Placement = PlacementMode.Relative, StaysOpen = false, AllowsTransparency = true, Focusable = false };
-        Loaded += (_, _) =>
-        {
-            if (_numbers == null && AdornerLayer.GetAdornerLayer(this) is { } layer) { _numbers = new(this); layer.Add(_numbers); }
-            InvalidateGutter();
-        };
-        Unloaded += (_, _) => { CloseCompletion(); if (_numbers != null) AdornerLayer.GetAdornerLayer(this)?.Remove(_numbers); _numbers = null; };
-        AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler((_, _) => { CloseCompletion(); InvalidateGutter(); }));
-        SizeChanged += (_, _) => InvalidateGutter();
-        SelectionChanged += (_, _) => { InvalidateGutter(); CaretStatusChanged?.Invoke(this, EventArgs.Empty); };
+        Loaded += (_, _) => { RefreshStructure(); if (_executionLine > 0 && _followExecutionLine) FollowExecutionLine(); };
+        Unloaded += (_, _) => { _structureTimer.Stop(); CloseCompletion(); };
+        TextArea.TextView.ScrollOffsetChanged += (_, _) => { CloseCompletion(); _executionMargin.InvalidateVisual(); };
+        TextArea.TextView.VisualLinesChanged += (_, _) => _executionMargin.InvalidateVisual();
+        TextArea.Caret.PositionChanged += (_, _) => CaretStatusChanged?.Invoke(this, EventArgs.Empty);
         TextChanged += (_, _) =>
         {
-            InvalidateGutter();
-            if (!_changing && ScriptMode && IsKeyboardFocused)
+            ClearExecutionLine();
+            _structureTimer.Stop(); _structureTimer.Start();
+            if (!_changing && ScriptMode && IsKeyboardFocusWithin)
                 Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => ShowCompletion(false)));
         };
         LostKeyboardFocus += (_, _) => CloseCompletion();
-        ToolTip = "Ctrl+Space 补全 · Tab / Shift+Tab 缩进 · 双击函数跳转 · F12 跳转定义";
+        ToolTip = "Ctrl+S 格式化并保存 · Ctrl+Space 补全 · Tab / Shift+Tab 缩进 · 双击函数 / F12 跳转 · 点击行号旁的标记折叠";
     }
 
-    private void InvalidateGutter() => _numbers?.InvalidateVisual();
+    public void RefreshStructure()
+    {
+        _structureTimer.Stop();
+        _colors.Update(ScriptMode ? Text : "");
+        if (ScriptMode)
+        {
+            _folding ??= FoldingManager.Install(TextArea);
+            _folding.UpdateFoldings(ScriptIndentation.AnalyzeBlocks(Text).Select(b => new NewFolding(b.StartOffset, b.EndOffset)
+            { Name = " … " }), -1);
+        }
+        else if (_folding != null) { FoldingManager.Uninstall(_folding); _folding = null; }
+        TextArea.TextView.Redraw();
+        InvalidateGutter();
+    }
+
+    // Compatibility methods use zero-based line indices, matching the previous editor.
+    public int GetCharacterIndexFromLineIndex(int line) => line >= 0 && line < LineCount ? Document.GetLineByNumber(line + 1).Offset : -1;
+    public int GetLineIndexFromCharacterIndex(int offset) => Document.GetLineByOffset(Math.Clamp(offset, 0, Document.TextLength)).LineNumber - 1;
+    public int GetFirstVisibleLineIndex()
+    {
+        TextArea.TextView.EnsureVisualLines();
+        return TextArea.TextView.VisualLines.FirstOrDefault()?.FirstDocumentLine.LineNumber - 1 ?? 0;
+    }
+    public int GetLastVisibleLineIndex()
+    {
+        TextArea.TextView.EnsureVisualLines();
+        return TextArea.TextView.VisualLines.LastOrDefault()?.LastDocumentLine.LineNumber - 1 ?? 0;
+    }
+    public new void ScrollToLine(int line) => base.ScrollToLine(Math.Clamp(line + 1, 1, LineCount));
+    public Rect GetRectFromCharacterIndex(int offset)
+    {
+        var view = TextArea.TextView;
+        var position = new TextViewPosition(Document.GetLocation(Math.Clamp(offset, 0, Document.TextLength)));
+        var point = view.GetVisualPosition(position, VisualYPosition.LineTop) - view.ScrollOffset;
+        point = view.TranslatePoint(point, this);
+        return new Rect(point, new Size(1, view.DefaultLineHeight));
+    }
+    public int GetCharacterIndexFromPoint(Point point, bool snapToText)
+    {
+        var position = GetPositionFromPoint(point);
+        return position.HasValue ? Document.GetOffset(position.Value.Location) : -1;
+    }
+    private void InvalidateGutter()
+    { TextArea.TextView.InvalidateLayer(KnownLayer.Background); _executionMargin.InvalidateVisual(); }
     public void CloseCompletion() => _popup.IsOpen = false;
+    public void ShowExecutionLine(int line, bool follow = true)
+    {
+        if (!ScriptMode || line < 1 || line > LineCount) { ClearExecutionLine(); return; }
+        if (_executionLine == line) return;
+        _executionLine = line; _followExecutionLine = follow;
+        ExpandLine(line);
+        if (follow && IsVisible) FollowExecutionLine();
+        InvalidateGutter();
+    }
+    public void ClearExecutionLine()
+    {
+        if (_executionLine == 0) return;
+        _executionLine = 0; _followExecutionLine = false; InvalidateGutter();
+    }
+    private void ExpandLine(int line)
+    {
+        int offset = Document.GetLineByNumber(line).Offset;
+        if (_folding != null)
+            foreach (var fold in _folding.GetFoldingsContaining(offset)) fold.IsFolded = false;
+    }
+    private void FollowExecutionLine()
+    {
+        int target = _executionLine - 1;
+        if (target < 0 || target >= LineCount) return;
+        int first = GetFirstVisibleLineIndex(), last = GetLastVisibleLineIndex();
+        if (target < first || target > last) ScrollToLine(target);
+    }
 
     public void ShowCompletion(bool explicitRequest = true)
     {
@@ -149,8 +236,10 @@ public sealed class ScriptEditorBox : TextBox
 
     public void InsertIndentedNewLine()
     {
-        int start = CaretIndex == 0 ? 0 : Text.LastIndexOf('\n', CaretIndex - 1) + 1;
-        string beforeCaret = Text[start..CaretIndex];
+        // Enter replaces the selection, regardless of which end contains the caret.
+        int insertion = SelectionStart;
+        int start = insertion == 0 ? 0 : Text.LastIndexOf('\n', insertion - 1) + 1;
+        string beforeCaret = Text[start..insertion];
         string indent = EditorSyntax.LeadingWhitespace(beforeCaret);
         string corrected = indent;
         // Find the surrounding block's level for a closing line, instead of repeatedly
@@ -204,38 +293,32 @@ public sealed class ScriptEditorBox : TextBox
         ReplaceText(SelectionStart, SelectionLength, text.Replace("\r\n", "\n").Replace("\n", newline)); Focus(); CloseCompletion();
     }
 
-    private void ReplaceText(int start, int length, string value)
+    public bool FormatIndentation()
     {
-        _changing = true; BeginChange();
-        try { Select(start, length); SelectedText = value; CaretIndex = start + value.Length; SelectionLength = 0; }
-        finally { EndChange(); _changing = false; }
+        if (!ScriptMode || IsReadOnly) return false;
+        var formatted = ScriptIndentation.Format(Text);
+        if (formatted.Text == Text) return false;
+        int start = formatted.MapPosition(SelectionStart);
+        int end = formatted.MapPosition(SelectionStart + SelectionLength);
+        double vertical = VerticalOffset, horizontal = HorizontalOffset;
+        bool wasChanging = _changing;
+        _changing = true; Document.BeginUpdate();
+        try
+        {
+            Select(0, Text.Length); SelectedText = formatted.Text;
+            Select(start, end - start);
+        }
+        finally { Document.EndUpdate(); _changing = wasChanging; }
+        ScrollToVerticalOffset(vertical); ScrollToHorizontalOffset(horizontal);
+        CloseCompletion();
+        return true;
     }
 
-    private sealed class LineNumbers(ScriptEditorBox editor) : Adorner(editor)
+    private void ReplaceText(int start, int length, string value)
     {
-        protected override void OnRender(DrawingContext drawing)
-        {
-            IsHitTestVisible = false;
-            if (!editor.IsVisible || editor.LineCount == 0) return;
-            var muted = editor.TryFindResource("MutedBrush") as Brush ?? Brushes.DimGray;
-            var background = editor.TryFindResource("PageBrush") as Brush ?? Brushes.White;
-            var line = editor.TryFindResource("LineBrush") as Brush ?? Brushes.LightGray;
-            var accent = editor.TryFindResource("AccentBrush") as Brush ?? Brushes.DarkCyan;
-            drawing.PushClip(new RectangleGeometry(new Rect(1, 1, editor.Padding.Left - 4, Math.Max(0, editor.ActualHeight - 2))));
-            drawing.DrawRectangle(background, null, new Rect(1, 1, editor.Padding.Left - 4, Math.Max(0, editor.ActualHeight - 2)));
-            drawing.DrawLine(new Pen(line, 1), new(editor.Padding.Left - 6, 8), new(editor.Padding.Left - 6, Math.Max(8, editor.ActualHeight - 8)));
-            int first = Math.Max(0, editor.GetFirstVisibleLineIndex()), last = Math.Max(first, editor.GetLastVisibleLineIndex());
-            int selectedLine = editor.GetLineIndexFromCharacterIndex(editor.CaretIndex);
-            for (int i = first; i <= last && i < editor.LineCount; i++)
-            {
-                int index = editor.GetCharacterIndexFromLineIndex(i); if (index < 0) continue;
-                var rect = editor.GetRectFromCharacterIndex(index); if (rect.IsEmpty) continue;
-                var label = new FormattedText((i + 1).ToString(CultureInfo.InvariantCulture), CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                    new Typeface(editor.FontFamily, FontStyles.Normal, i == selectedLine ? FontWeights.SemiBold : FontWeights.Normal, FontStretches.Normal),
-                    editor.FontSize, i == selectedLine ? accent : muted, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-                drawing.DrawText(label, new Point(editor.Padding.Left - 14 - label.Width, rect.Y));
-            }
-            drawing.Pop();
-        }
+        _changing = true; Document.BeginUpdate();
+        try { Select(start, length); SelectedText = value; CaretIndex = start + value.Length; SelectionLength = 0; }
+        finally { Document.EndUpdate(); _changing = false; }
     }
+
 }

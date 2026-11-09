@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Collections.Immutable;
 using System.Text;
-using System.Text.RegularExpressions;
 using EasyCon.Script;
 using EasyCon.Script.Bytecode;
 using EasyCon.Script.Symbols;
@@ -43,7 +42,6 @@ public sealed class StudioScriptException(string message, int line = 0, Exceptio
 public sealed class StudioScriptEngine
 {
     private const string Library = "textsender";
-    private static readonly Regex Identifier = new("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant);
 
     public IReadOnlyList<ScriptDiagnostic> Validate(string source, IEnumerable<string>? functionNames = null)
     {
@@ -55,9 +53,16 @@ public sealed class StudioScriptEngine
         catch (StudioScriptException ex) { return [new(ex.Line, ex.Message, true)]; }
     }
 
-    public Task RunAsync(string source, IScriptActions actions, CancellationToken token)
+    public async Task RunAsync(string source, IScriptActions actions, CancellationToken token, ScriptExecutionTracker? tracker = null)
     {
         ArgumentNullException.ThrowIfNull(actions);
+        tracker?.Clear();
+        try { await RunCoreAsync(source, actions, token, tracker).ConfigureAwait(false); }
+        finally { tracker?.Clear(); }
+    }
+
+    private static Task RunCoreAsync(string source, IScriptActions actions, CancellationToken token, ScriptExecutionTracker? tracker)
+    {
         // Compilation and execution both stay off the UI thread. No disk cache or external module loading.
         return Task.Run(async () =>
         {
@@ -74,6 +79,7 @@ public sealed class StudioScriptEngine
             var stopwatch = Stopwatch.StartNew();
             var host = new EcxHost
             {
+                ExecutionPosition = tracker?.Attach(image, source),
                 Caps = EcsCaps.AllDesktop,
                 AppDir = AppContext.BaseDirectory,
                 WaitMs = ms => Wait(ms, token),
@@ -109,6 +115,8 @@ public sealed class StudioScriptEngine
                     actions.TypeAsync(context.Str(args[0]), token).GetAwaiter().GetResult();
                 else if (name == Library + "!KEYBOARD")
                     actions.KeyAsync(context.Str(args[0]), args[1].AsInt(), token).GetAwaiter().GetResult();
+                else if (name == Library + "!PAD_STATE")
+                    pad.SetReport(context.Str(args[0]), args[1].AsInt(), args[2].AsInt(), args[3].AsInt(), args[4].AsInt());
                 else if (name is Library + "!HTTP_GET" or Library + "!HTTP_POST" or Library + "!HTTP_REQUEST")
                 {
                     if (actions is not IScriptHttpActions http)
@@ -151,15 +159,16 @@ public sealed class StudioScriptEngine
     private static CompileResult Compile(string source, IEnumerable<string> functionNames)
     {
         var appended = new StringBuilder(source).AppendLine().AppendLine();
-        var seen = new HashSet<string>(StringComparer.Ordinal) { "SEND_TEXT", "KEYBOARD", "HTTP_GET", "HTTP_POST", "HTTP_REQUEST" };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         appended.AppendLine("EXTERN FUNC SEND_TEXT($text: STRING) FROM \"textsender\"");
         appended.AppendLine("EXTERN FUNC KEYBOARD($keys: STRING, $ms: INT) FROM \"textsender\"");
+        appended.AppendLine("EXTERN FUNC PAD_STATE($buttons: STRING, $lx: INT, $ly: INT, $rx: INT, $ry: INT) FROM \"textsender\"");
         appended.AppendLine("EXTERN FUNC HTTP_GET($url: STRING) FROM \"textsender\"");
         appended.AppendLine("EXTERN FUNC HTTP_POST($url: STRING, $body: STRING) FROM \"textsender\"");
         appended.AppendLine("EXTERN FUNC HTTP_REQUEST($method: STRING, $url: STRING, $body: STRING, $contentType: STRING) FROM \"textsender\"");
         foreach (var name in functionNames)
         {
-            if (!Identifier.IsMatch(name) || !seen.Add(name))
+            if (!ScriptFunctionNames.IsValid(name) || ScriptFunctionNames.IsReserved(name) || !seen.Add(name))
                 throw new StudioScriptException($"函数名无效或重复：{name}。");
             appended.AppendLine($"EXTERN FUNC {name}() FROM \"{Library}\"");
         }
@@ -215,6 +224,31 @@ public sealed class StudioScriptEngine
         {
             foreach (var button in KeyName(key).Split('+', StringSplitOptions.RemoveEmptyEntries))
                 if (down != 0) _held.Add(button); else _held.Remove(button);
+            Send();
+        }
+
+        public void SetReport(string buttons, int lx, int ly, int rx, int ry)
+        {
+            if (lx is < 0 or > 255 || ly is < 0 or > 255 || rx is < 0 or > 255 || ry is < 0 or > 255)
+                throw new StudioScriptException("PAD_STATE 摇杆坐标须为 0–255，中心为 128。");
+            var held = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var part in buttons.Split(['+', ',', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var name = part.ToUpperInvariant() switch
+                {
+                    "L3" => "LCLICK", "R3" => "RCLICK", "-" => "MINUS", "UP" => "TOP",
+                    "UPLEFT" => "TOP_LEFT", "UPRIGHT" => "TOP_RIGHT", "DOWNLEFT" => "DOWN_LEFT", "DOWNRIGHT" => "DOWN_RIGHT",
+                    var value => value
+                };
+                if (!char.IsLetter(name[0]) || !Enum.TryParse<GamePadKey>(name, out var key) || !Enum.IsDefined(key)
+                    || key is GamePadKey.None or GamePadKey.LS or GamePadKey.RS)
+                    throw new StudioScriptException("PAD_STATE 未知手柄按键：" + part);
+                held.UnionWith(KeyName((int)key).Split('+'));
+            }
+            // Validate the entire report before replacing held state. Later EasyCon
+            // DOWN/UP/tap/stick instructions then continue from this exact snapshot.
+            _held.Clear(); _held.UnionWith(held);
+            _lx = (byte)lx; _ly = (byte)ly; _rx = (byte)rx; _ry = (byte)ry;
             Send();
         }
 

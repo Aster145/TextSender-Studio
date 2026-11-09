@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using TextSenderStudio.Core;
 
@@ -83,6 +84,7 @@ public partial class MainWindow
     private void HttpEditingChanged(object sender, RoutedEventArgs e)
     {
         if (_httpToggleChanging || HttpSteps == null) return;
+        if (_operation != null) { SetHttpToggle(_httpEditing); return; }
         if (HttpEditToggle.IsChecked == true) _httpEditing = true;
         else
         {
@@ -99,7 +101,9 @@ public partial class MainWindow
     private void UpdateHttpEditingUi()
     {
         if (HttpSteps == null) return;
-        var editable = _httpEditing && _project != null;
+        var editable = _httpEditing && _project != null && _operation == null;
+        HttpEditToggle.IsEnabled = _operation == null;
+        HttpDetails.IsEnabled = _operation == null;
         var hasAction = _selectedHttp != null;
         HttpSteps.IsReadOnly = !editable;
         HttpName.IsReadOnly = HttpFunction.IsReadOnly = HttpBody.IsReadOnly = HttpContentType.IsReadOnly = !editable;
@@ -130,7 +134,7 @@ public partial class MainWindow
 
     private void EditHttpSteps(Action edit)
     {
-        if (!_httpEditing || _selectedHttp == null) return;
+        if (!_httpEditing || _selectedHttp == null || _operation != null) return;
         try
         {
             CommitHttpStep();
@@ -171,14 +175,14 @@ public partial class MainWindow
     private void MoveHttpStepUpClick(object sender, RoutedEventArgs e) => MoveHttpStep(-1);
     private void MoveHttpStepDownClick(object sender, RoutedEventArgs e) => MoveHttpStep(1);
 
-    private void SavePendingHttp() { if (_httpEditing) SaveHttp(); }
+    private void SavePendingHttp() { if (_httpEditing && _operation == null) SaveHttp(); }
 
     private void SaveHttp()
     {
-        if (_project == null || _selectedHttp == null) return;
+        if (_project == null || _selectedHttp == null || _operation != null) return;
         CommitHttpStep();
-        if (string.IsNullOrWhiteSpace(HttpName.Text) || _steps.Count == 0)
-            throw new ArgumentException("动作名称不能为空，且至少需要一个请求步骤。可用“删除动作”移除整个动作。");
+        if (_steps.Count == 0)
+            throw new ArgumentException("至少需要一个请求步骤。可用“删除动作”移除整个动作。");
         var index = _project.HttpActions.IndexOf(_selectedHttp);
         if (index < 0) throw new InvalidOperationException("当前动作已变化，请重新选择动作。");
         var clone = ProjectStore.Clone(_project);
@@ -212,7 +216,7 @@ public partial class MainWindow
 
     private void NewHttpClick(object sender, RoutedEventArgs e)
     {
-        if (_project == null || !_httpEditing) return;
+        if (_project == null || !_httpEditing || _operation != null) return;
         try
         {
             SavePendingHttp();
@@ -236,12 +240,25 @@ public partial class MainWindow
     }
     private async void RunHttpClick(object sender, RoutedEventArgs e)
     {
+        if (_operation != null) return;
         try { SavePendingHttp(); if (_selectedHttp != null) await RunAction(_selectedHttp.FunctionName, false); }
         catch (Exception error) { HttpResult.Text = error.Message; }
     }
+    private void HttpActionDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || _operation != null ||
+            e.OriginalSource is not DependencyObject source ||
+            ItemsControl.ContainerFromElement(HttpList, source) is not ListBoxItem item ||
+            item.Content is not HttpAction action) return;
+        HttpList.SelectedItem = action;
+        // Invalid drafts may reject a selection change; never run the previous row.
+        if (!ReferenceEquals(HttpList.SelectedItem, action)) return;
+        e.Handled = true;
+        RunHttpClick(sender, e);
+    }
     private void DeleteHttpClick(object sender, RoutedEventArgs e)
     {
-        if (_project == null || _selectedHttp == null || !_httpEditing) return;
+        if (_project == null || _selectedHttp == null || !_httpEditing || _operation != null) return;
         try
         {
             var index = _project.HttpActions.IndexOf(_selectedHttp);

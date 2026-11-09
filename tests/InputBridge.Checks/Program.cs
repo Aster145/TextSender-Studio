@@ -10,6 +10,9 @@ async Task Throws<T>(Func<Task> action, string message) where T : Exception
 { try { await action(); } catch (T) { checks++; return; } throw new Exception(message); }
 Check(InputBridge.ParsePad("A+R+UP+LEFT") == (36, 7), "combined pad mapping");
 Check(InputBridge.ParsePad("UP+DOWN+LEFT+RIGHT") == (0, 15), "opposite dpad neutral");
+Check(InputBridge.ParsePad("LCLICK+RCLICK") == InputBridge.ParsePad("L3+R3"), "EasyCon stick click aliases match bridge button masks");
+foreach (var (alias, expanded) in new[] { ("UPLEFT", "UP+LEFT"), ("UPRIGHT", "UP+RIGHT"), ("DOWNLEFT", "DOWN+LEFT"), ("DOWNRIGHT", "DOWN+RIGHT") })
+    Check(InputBridge.ParsePad(alias) == InputBridge.ParsePad(expanded), "EasyCon diagonal alias: " + alias);
 var parsed = InputBridge.ParseKeyboard("CTRL+SHIFT+A+B");
 Check(parsed.Modifiers == 3 && parsed.Keys.SequenceEqual(new byte[] { 4, 5 }), "keyboard modifier and six-key report mapping");
 await Throws<ArgumentException>(() => Task.FromResult(InputBridge.ParsePad("UNKNOWN")), "unknown pad name");

@@ -251,6 +251,7 @@ public static class EcxPipeline
         };
         // 链接期死函数消除：stdlib/vision 供给的未调用函数体不进镜像（入口可达性为准）
         StripUnreachableFunctions(image);
+        for (int i = 0; i < image.Functions.Count; i++) image.Functions[i].ImageIndex = i;
         // 死存储清扫（防线 3，LLVM DeadMachineInstructionElim 的镜像级等价）：SSA φ 降级/变量
         // 落槽在块边界留下的死 Move/SetVar、无人读取的常量物化不进最终镜像。置于常量池压缩
         // 之前——清扫可能删掉某常量最后一个 LoadK 引用，使其进入死元素集一并消除。

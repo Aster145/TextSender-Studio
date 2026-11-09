@@ -6,6 +6,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+    <EmbeddedResource Include="../../licenses/AvalonEdit-MIT.txt" Link="Licenses/AvalonEdit-MIT.txt" />
     <ProjectReference Include="../TextSenderStudio.Core/TextSenderStudio.Core.csproj" />
     <ProjectReference Include="../TextSenderStudio.Vision/TextSenderStudio.Vision.csproj" />
     <Resource Include="../../TextSenderStudio.ico" Link="TextSenderStudio.ico" />

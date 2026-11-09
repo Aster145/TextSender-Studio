@@ -58,8 +58,7 @@ internal sealed class SettingsWindow : Window
         var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right }; footer.Child = actions;
         DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
         var panel = new StackPanel { Margin = new(24, 0, 24, 8) }; root.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
-        var appearance = Section(panel, "界面", "按你的习惯显示控制栏与窗口。");
-        var manual = new CheckBox { Content = "显示手动控制栏（Pro 手柄 / 键盘与文字）", IsChecked = source.ShowManualControls }; appearance.Children.Add(manual);
+        var appearance = Section(panel, "界面", "手动控制开关位于主标签；窗口置顶也可在顶部直接切换。");
         var onTop = new CheckBox { Content = "默认窗口置顶", IsChecked = source.AlwaysOnTop, Margin = new(0, 8, 0, 0) }; appearance.Children.Add(onTop);
         var espSection = Section(panel, "ESP32-S3", "填写开发板连接路由器后获得的局域网地址。");
         var (esp, espPort) = AddressFields(espSection, "ESP32-S3 · IP / 主机名", source.EspHost, "ESP32 端口", source.EspPort.ToString());
@@ -103,7 +102,7 @@ internal sealed class SettingsWindow : Window
         var cancel = Dialogs.Button(actions, "取消", () => DialogResult = false); cancel.IsCancel = true;
         Dialogs.Button(actions, "保存设置", () =>
         {
-            try { Result.ShowManualControls = manual.IsChecked == true; Result.AlwaysOnTop = onTop.IsChecked == true; Result.EspHost = esp.Text.Trim(); Result.EspPort = int.Parse(espPort.Text); Result.RobotHost = robot.Text.Trim(); Result.RobotPort = int.Parse(robotPort.Text); Result.RobotScheme = (string)protocol.SelectedItem; Result.RequestTimeoutMs = int.Parse(timeout.Text); Result.LanEnabled = lan.IsChecked == true; Result.LanPort = int.Parse(lanPort.Text); Result.LanBindAddress = (string)address.SelectedItem; ProjectStore.ValidateSettings(Result); DialogResult = true; }
+            try { Result.AlwaysOnTop = onTop.IsChecked == true; Result.EspHost = esp.Text.Trim(); Result.EspPort = int.Parse(espPort.Text); Result.RobotHost = robot.Text.Trim(); Result.RobotPort = int.Parse(robotPort.Text); Result.RobotScheme = (string)protocol.SelectedItem; Result.RequestTimeoutMs = int.Parse(timeout.Text); Result.LanEnabled = lan.IsChecked == true; Result.LanPort = int.Parse(lanPort.Text); Result.LanBindAddress = (string)address.SelectedItem; ProjectStore.ValidateSettings(Result); DialogResult = true; }
             catch (Exception error) { Dialogs.Error(this, error); }
         }, true);
     }

@@ -375,7 +375,7 @@ internal partial class Parser
                 MatchEOF();
                 return new Wait(first, Formatter.GetValueEx(durat));
             case "call":
-                var fnname = Match(TokenType.IDENT);
+                var fnname = MatchFunctionName();
                 MatchEOF();
                 return new CallStmt(first, fnname.Value, []);
 #if DEBUG
@@ -617,10 +617,14 @@ internal partial class Parser
 
     #region Function Declaration Parsers
 
+    // Leading underscores also name constants. Treat them as function names only
+    // where the grammar explicitly requires a function; constant expressions stay intact.
+    private Token MatchFunctionName() => Check(TokenType.CONST) ? Advance() : Match(TokenType.IDENT);
+
     private FuncStmt ParseFuncDecl()
     {
         var functionToken = Advance();
-        var functionName = Match(TokenType.IDENT, "函数声明需要函数名");
+        var functionName = MatchFunctionName();
 
         var hasPar = false;
         var parameters = ImmutableArray<ParameterSyntax>.Empty;
@@ -690,7 +694,7 @@ internal partial class Parser
         var funcToken = Match(TokenType.FUNC, "EXTERN 后需要 FUNC 关键字");
 
         // Function name
-        var functionName = Match(TokenType.IDENT, "EXTERN FUNC 需要函数名");
+        var functionName = MatchFunctionName();
 
         // Parameter list (parentheses required)
         Match(TokenType.LeftParen, "EXTERN FUNC 声明需要左括号");

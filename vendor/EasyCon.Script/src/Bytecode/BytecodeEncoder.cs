@@ -334,6 +334,7 @@ public static partial class BytecodeEncoder
                 foreach (var c in info.Consts)
                 {
                     _slots[c] = PoolAlloc();
+                    SetEmitLine(c);
                     EmitLoadConst(c);
                 }
 
@@ -347,6 +348,7 @@ public static partial class BytecodeEncoder
                             ReleaseDying(block, v);
                     if (_pooled.Contains(inst))
                         _slots[inst] = PoolAlloc();
+                    SetEmitLine(inst);
                     EmitInst(inst);
                 }
                 EmitTerminator(block);
@@ -361,6 +363,7 @@ public static partial class BytecodeEncoder
 
         void EmitTerminator(SsaBlock block)
         {
+            SetEmitLine(block.BranchCondition ?? block.Instructions.LastOrDefault());
             EmitTerminatorShape(block);
             // 回放登记期推导的终结符结算计划：返回值/分支条件/出边 φ 臂（每条出边一次，含死 φ 臂）
             if (_terminatorReleases.TryGetValue(block, out var termReleases))

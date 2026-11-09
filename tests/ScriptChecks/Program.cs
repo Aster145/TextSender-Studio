@@ -22,6 +22,19 @@ Check(syntaxError.Any(d => d.IsError && d.Line == 1), "diagnostics include origi
 Check(engine.Validate("CALL missing").Any(d => d.IsError), "unknown CALL rejected before execution");
 Check(engine.Validate("WAIT 0", ["bad-name"]).Any(d => d.IsError), "invalid action name rejected");
 Check(engine.Validate("WAIT 0", ["same", "same"]).Any(d => d.IsError), "duplicate action binding rejected");
+Check(engine.Validate("WAIT 0", ["启动Tools", "启动TOOLS"]).Any(d => d.IsError), "mixed Chinese action duplicates rejected case-insensitively");
+foreach (var name in new[] { "1开机", "开 机", "开-机", "开机\nWAIT", "开机()", "开机。", "开机😀", "" })
+    Check(engine.Validate("WAIT 0", [name]).Any(d => d.IsError), "invalid Chinese action name rejected: " + name.Replace('\n', ' '));
+foreach (var name in new[] { "WAIT", "print", "Call", "IF", "down", "int", "SEND_TEXT", "http_get", "__CAPTURE__" })
+    Check(engine.Validate("WAIT 0", [name]).Any(d => d.IsError), "reserved action name rejected: " + name);
+
+var chineseNames = new[] { "发送短语", "启动_工具2", "HTTP短按", "播放提醒", "_中文入口" };
+var chineseCalls = await Run(string.Join('\n', chineseNames.Select(name => "CALL " + name)), chineseNames);
+Check(chineseCalls.Calls.SequenceEqual(chineseNames), "Chinese phrase shortcut HTTP and sound wrappers execute without name translation");
+var chineseFunction = await Run("FUNC 计算总数($数值):INT\nRETURN $数值 + 1\nENDFUNC\n$x = 计算总数(4)\nIF $x == 5\nCALL 完成提醒\nENDIF", "完成提醒");
+Check(chineseFunction.Calls.SequenceEqual(["完成提醒"]), "Chinese local function and argument names preserve return values");
+var underscores = await Run("_上限 = 5\nFUNC _计算($输入):INT\nRETURN $输入 + _上限\nENDFUNC\nFUNC _完成()\nCALL _中文动作\nENDFUNC\n$x = _计算(2)\nIF $x == 7\nCALL _完成\nENDIF", "_中文动作");
+Check(underscores.Calls.SequenceEqual(["_中文动作"]), "underscore function declarations and CALL preserve ordinary constants");
 
 var flow = await Run("$n = 0\nFOR 3\n$n = $n + 1\nA 25\nNEXT\nIF $n == 3\nPRINT correct\nELSE\nPRINT wrong\nENDIF");
 Check(flow.Pads.SequenceEqual(["A:25", "A:25", "A:25"]), "FOR and key durations");
@@ -59,6 +72,8 @@ try { await Run("AMIIBO 1"); throw new Exception("ignored unsupported input"); }
 catch (StudioScriptException) { Check(true, "unsupported hardware feature reports an error"); }
 try { await Run("EXTERN FUNC hidden() FROM \"user32.dll\"\nCALL hidden"); throw new Exception("loaded external DLL"); }
 catch (StudioScriptException) { Check(true, "external host function is not silently loaded"); }
+await ExecutionTrackingChecks.Run(engine, Check);
+await PadStateChecks.Run(engine, Check);
 Console.WriteLine($"Script checks passed: {checks}");
 
 sealed class FakeActions(string[] functionNames) : IScriptActions, IStatefulScriptActions

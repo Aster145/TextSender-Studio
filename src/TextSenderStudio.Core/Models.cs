@@ -4,6 +4,7 @@ public sealed class AppSettings
 {
     public bool ShowManualControls { get; set; }
     public bool AlwaysOnTop { get; set; } = true;
+    public bool ShowExecutionPosition { get; set; }
     public string EspHost { get; set; } = "192.168.4.1";
     public int EspPort { get; set; } = 80;
     public string RobotHost { get; set; } = "";
@@ -22,6 +23,7 @@ public sealed class AppSettings
     public string Transport { get; set; } = "WiFi";
     public string SerialPort { get; set; } = "";
     public PushNotificationSettings PushNotifications { get; set; } = new();
+    public DirectControlSettings DirectControl { get; set; } = new();
     [System.Text.Json.Serialization.JsonIgnore] public string EspBaseUrl => $"http://{EspHost}:{EspPort}";
     [System.Text.Json.Serialization.JsonIgnore] public string RobotBaseUrl => $"{RobotScheme}://{RobotHost}:{RobotPort}";
 }
